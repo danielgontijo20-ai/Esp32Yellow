@@ -148,20 +148,13 @@ class TestParserSample(unittest.TestCase):
         self.assertIn("1. Observe seus juízos.", joined)
         self.assertIn("2. Distinga o que depende de você.", joined)
         self.assertIn("3. Aja com justiça e coragem.", joined)
-        # Nenhum segmento de texto deve fundir os 3 itens em um parágrafo
+        # Itens podem ficar no mesmo segment, mas com \n — nunca com espaço
         for seg in lesson7.segments:
             if seg.type != "text":
                 continue
-            count = sum(
-                1
-                for marker in (
-                    "1. Observe",
-                    "2. Distinga",
-                    "3. Aja",
-                )
-                if marker in seg.text
-            )
-            self.assertLessEqual(count, 1, f"Lista fundida: {seg.text!r}")
+            if "1. Observe" in seg.text and "2. Distinga" in seg.text:
+                self.assertIn("\n", seg.text)
+                self.assertNotIn("juízos. 2.", seg.text)
 
     def test_text_field_preserves_paragraphs(self) -> None:
         lesson1 = self.lessons[0]
@@ -175,6 +168,76 @@ class TestParserSample(unittest.TestCase):
             any("lista" in w.lower() for w in lesson7.warnings),
             f"Avisos da lição 7: {lesson7.warnings}",
         )
+
+
+class TestEstoico110(unittest.TestCase):
+    """Validação com o TXT real das 10 primeiras lições."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        path = ROOT / "input" / "Estoico_1_10.txt"
+        cls.path = path
+        cls.lessons, _ = parse_text(path.read_text(encoding="utf-8"))
+
+    def test_ten_lessons(self) -> None:
+        self.assertEqual(len(self.lessons), 10)
+
+    def test_lesson7_emdash_list_preserves_newlines(self) -> None:
+        lesson7 = self.lessons[6]
+        self.assertEqual(lesson7.id, 7)
+        text_segs = [s for s in lesson7.segments if s.type == "text"]
+        blob = "\n".join(s.text for s in text_segs)
+        for label in (
+            "Escolha —",
+            "Recusa —",
+            "Anseio —",
+            "Repulsa —",
+            "Preparação —",
+            "Objetivo —",
+            "Consentimento —",
+        ):
+            self.assertIn(label, blob)
+        # Não pode aparecer colado com espaço entre itens
+        self.assertNotIn("corretamente Recusa", blob)
+        # Em algum segment (ou no conjunto) as quebras devem existir
+        found_structured = False
+        for seg in text_segs:
+            if "Escolha —" in seg.text and "Recusa —" in seg.text:
+                self.assertIn("\n", seg.text)
+                self.assertNotIn("corretamente Recusa", seg.text)
+                found_structured = True
+            elif "Escolha —" in seg.text:
+                # item isolado também é válido
+                found_structured = True
+        self.assertTrue(found_structured)
+
+    def test_lesson1_serenity_prayer_not_cut_badly(self) -> None:
+        lesson1 = self.lessons[0]
+        prayer = (
+            "Deus, concedei-me a serenidade para aceitar as coisas que não posso mudar, "
+            "a coragem para mudar as coisas que posso e a sabedoria para distingui-las."
+        )
+        # A oração completa deve aparecer em algum segment (quote ou text),
+        # sem corte no meio da frase.
+        found = False
+        for seg in lesson1.segments:
+            flat = seg.text.replace("\n", " ")
+            if "concedei-me a serenidade" in flat:
+                self.assertIn("sabedoria para distingui-las", flat)
+                # Não cortar antes do fim da oração no mesmo segment
+                self.assertIn(prayer, flat)
+                found = True
+        self.assertTrue(found, "Prece da Serenidade não encontrada intacta nos segments")
+
+    def test_segment_order_quote_source_text(self) -> None:
+        for lesson in self.lessons:
+            types = [s.type for s in lesson.segments]
+            self.assertIn("quote", types)
+            self.assertIn("source", types)
+            self.assertIn("text", types)
+            rank = {"quote": 0, "source": 1, "text": 2}
+            ranks = [rank[t] for t in types]
+            self.assertEqual(ranks, sorted(ranks))
 
 
 class TestBuilderIntegration(unittest.TestCase):
