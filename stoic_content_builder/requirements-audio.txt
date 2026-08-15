@@ -1,4 +1,5 @@
 # Diário Estoico — Audio Builder (Kokoro TTS offline)
+# Requer Python 3.10, 3.11 ou 3.12 (Kokoro NÃO roda em 3.13+).
 # Instalar em um venv separado do Content Builder (recomendado).
 
 kokoro>=0.9.4

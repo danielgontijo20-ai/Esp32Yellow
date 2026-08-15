@@ -8,7 +8,22 @@ usando o modelo **Kokoro-82M**.
 
 ## 1. Instalar dependências
 
-### Sistema
+### Python (obrigatório)
+
+Use **Python 3.10, 3.11 ou 3.12**.
+
+O pacote `kokoro` **não** funciona em Python 3.13/3.14.
+
+No Windows, confira:
+```bat
+py -0
+py -3.12 --version
+```
+
+Se `py -3.12` não existir, instale o **Python 3.12** em:
+https://www.python.org/downloads/release/python-31210/
+
+Marque **Add python.exe to PATH**.
 
 **Windows**
 - Python 3.11 ou 3.12
@@ -24,14 +39,16 @@ sudo apt install espeak-ng ffmpeg python3-venv
 
 ```bash
 cd stoic_content_builder
-python -m venv .venv
 
-# Windows
+# Windows — use explicitamente o Python 3.12:
+py -3.12 -m venv .venv
 .venv\Scripts\activate
 
 # Linux / macOS
+python3.12 -m venv .venv
 source .venv/bin/activate
 
+pip install -U pip
 pip install -r requirements-audio.txt
 ```
 
