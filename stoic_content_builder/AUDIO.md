@@ -14,16 +14,21 @@ Use **Python 3.10, 3.11 ou 3.12**.
 
 O pacote `kokoro` **não** funciona em Python 3.13/3.14.
 
-No Windows, confira:
-```bat
-py -0
-py -3.12 --version
-```
+**Recomendado no Windows: Python 3.11** (tem instalador oficial atual).
 
-Se `py -3.12` não existir, instale o **Python 3.12** em:
-https://www.python.org/downloads/release/python-31210/
+- 3.11: https://www.python.org/downloads/release/python-3119/
+- 3.12.10 (último com instalador): https://www.python.org/downloads/release/python-31210/
+
+Na página, role até **Files** e baixe:
+`Windows installer (64-bit)`
 
 Marque **Add python.exe to PATH**.
+
+Confira:
+```bat
+py -0
+py -3.11 --version
+```
 
 **Windows**
 - Python 3.11 ou 3.12
@@ -40,12 +45,12 @@ sudo apt install espeak-ng ffmpeg python3-venv
 ```bash
 cd stoic_content_builder
 
-# Windows — use explicitamente o Python 3.12:
-py -3.12 -m venv .venv
+# Windows — use explicitamente o Python 3.11 (ou 3.12):
+py -3.11 -m venv .venv
 .venv\Scripts\activate
 
 # Linux / macOS
-python3.12 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 
 pip install -U pip
