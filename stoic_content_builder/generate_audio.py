@@ -44,6 +44,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Sobrescreve config.VOICE (ex.: pf_dora, pm_alex, pm_santa)",
     )
+    parser.add_argument(
+        "--format",
+        choices=("mp3", "wav"),
+        default=None,
+        help="mp3 (precisa ffmpeg) ou wav (sem ffmpeg)",
+    )
     return parser.parse_args()
 
 
@@ -51,6 +57,8 @@ def main() -> int:
     args = parse_args()
     if args.voice:
         config.VOICE = args.voice
+    if args.format:
+        config.OUTPUT_FORMAT = args.format
 
     report = run_audio_build(mode=args.mode, build_dir=args.build_dir)
     print()
