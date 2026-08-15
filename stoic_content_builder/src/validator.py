@@ -38,11 +38,48 @@ def validate_lesson(lesson: Lesson) -> list[ValidationIssue]:
             ValidationIssue("warning", lid, "Nenhum segmento gerado.")
         )
     else:
+        allowed_types = {"quote", "source", "text"}
+        seen_types: list[str] = []
         for seg in lesson.segments:
             if not seg.text or not seg.text.strip():
                 issues.append(
                     ValidationIssue(
                         "error", lid, f"Segmento {seg.id} com texto vazio."
+                    )
+                )
+            if seg.type not in allowed_types:
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        lid,
+                        f"Segmento {seg.id} com type inválido: {seg.type!r}",
+                    )
+                )
+            else:
+                seen_types.append(seg.type)
+
+        # Ordem esperada da narração: quote → source → text
+        if seen_types:
+            order_rank = {"quote": 0, "source": 1, "text": 2}
+            ranks = [order_rank[t] for t in seen_types]
+            if ranks != sorted(ranks):
+                issues.append(
+                    ValidationIssue(
+                        "warning",
+                        lid,
+                        "Segmentos fora da ordem quote → source → text.",
+                    )
+                )
+            if "quote" not in seen_types and lesson.quote.text.strip():
+                issues.append(
+                    ValidationIssue(
+                        "warning", lid, "Citação não aparece nos segmentos."
+                    )
+                )
+            if "source" not in seen_types and lesson.quote.source.strip():
+                issues.append(
+                    ValidationIssue(
+                        "warning", lid, "Fonte não aparece nos segmentos."
                     )
                 )
 

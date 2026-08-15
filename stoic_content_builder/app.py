@@ -66,7 +66,7 @@ class ResultsViewer(tk.Toplevel):
         self.lbl_pos.config(text=f"Lição {self.index + 1} / {total}")
 
         segments_block = "\n".join(
-            f"  [{s.id}] {s.text}" for s in lesson.segments
+            f"  [{s.id}|{s.type}] {s.text}" for s in lesson.segments
         ) or "  (nenhum)"
 
         content = (

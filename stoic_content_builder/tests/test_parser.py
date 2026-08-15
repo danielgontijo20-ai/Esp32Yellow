@@ -124,6 +124,51 @@ class TestParserSample(unittest.TestCase):
                 len(lesson.segments), 1, f"Sem segmentos: {lesson.date}"
             )
 
+    def test_segments_include_quote_source_text(self) -> None:
+        for lesson in self.lessons:
+            types = [s.type for s in lesson.segments]
+            self.assertIn("quote", types, f"Sem quote: {lesson.date}")
+            self.assertIn("source", types, f"Sem source: {lesson.date}")
+            self.assertIn("text", types, f"Sem text: {lesson.date}")
+            # Ordem quote → source → text
+            rank = {"quote": 0, "source": 1, "text": 2}
+            ranks = [rank[t] for t in types]
+            self.assertEqual(ranks, sorted(ranks), f"Ordem inválida: {types}")
+
+    def test_segment_source_matches_quote_source(self) -> None:
+        for lesson in self.lessons:
+            source_segs = [s for s in lesson.segments if s.type == "source"]
+            self.assertEqual(len(source_segs), 1)
+            self.assertEqual(source_segs[0].text, lesson.quote.source)
+
+    def test_list_items_not_merged_in_segments(self) -> None:
+        lesson7 = self.lessons[6]
+        text_segs = [s.text for s in lesson7.segments if s.type == "text"]
+        joined = "\n".join(text_segs)
+        self.assertIn("1. Observe seus juízos.", joined)
+        self.assertIn("2. Distinga o que depende de você.", joined)
+        self.assertIn("3. Aja com justiça e coragem.", joined)
+        # Nenhum segmento de texto deve fundir os 3 itens em um parágrafo
+        for seg in lesson7.segments:
+            if seg.type != "text":
+                continue
+            count = sum(
+                1
+                for marker in (
+                    "1. Observe",
+                    "2. Distinga",
+                    "3. Aja",
+                )
+                if marker in seg.text
+            )
+            self.assertLessEqual(count, 1, f"Lista fundida: {seg.text!r}")
+
+    def test_text_field_preserves_paragraphs(self) -> None:
+        lesson1 = self.lessons[0]
+        self.assertIn("\n\n", lesson1.text)
+        # text continua sendo só a reflexão (sem a fonte)
+        self.assertNotIn("EPICTETO, DISCURSOS", lesson1.text)
+
     def test_list_warning_on_lesson7(self) -> None:
         lesson7 = self.lessons[6]
         self.assertTrue(
@@ -151,6 +196,15 @@ class TestBuilderIntegration(unittest.TestCase):
                 self.assertIn("quote", data)
                 self.assertIn("text", data)
                 self.assertIn("segments", data)
+                self.assertTrue(data["segments"])
+                self.assertEqual(data["segments"][0]["type"], "quote")
+                types = [s["type"] for s in data["segments"]]
+                self.assertIn("source", types)
+                self.assertIn("text", types)
+                for seg in data["segments"]:
+                    self.assertIn(seg["type"], ("quote", "source", "text"))
+                    self.assertIn("text", seg)
+                    self.assertIn("id", seg)
                 # Sem campos de áudio nesta versão
                 self.assertNotIn("audio_file", data)
                 self.assertNotIn("start", data)

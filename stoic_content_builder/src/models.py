@@ -17,15 +17,26 @@ class Quote:
         return {"text": self.text, "source": self.source}
 
 
+# Tipos de segmento na ordem de narração futura: quote → source → text
+SEGMENT_TYPES = ("quote", "source", "text")
+
+
 @dataclass
 class Segment:
-    """Segmento curto do texto da reflexão."""
+    """Segmento curto para exibição/narração futura.
+
+    type:
+      - quote  → trecho da citação
+      - source → fonte da citação
+      - text   → trecho da reflexão
+    """
 
     id: int
+    type: str
     text: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.id, "text": self.text}
+        return {"id": self.id, "type": self.type, "text": self.text}
 
 
 @dataclass

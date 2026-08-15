@@ -109,10 +109,16 @@ Formato de `lesson.json`:
   },
   "text": "...",
   "segments": [
-    { "id": 1, "text": "..." }
+    { "id": 1, "type": "quote", "text": "..." },
+    { "id": 2, "type": "source", "text": "EPICTETO, DISCURSOS, 2.5.4-5" },
+    { "id": 3, "type": "text", "text": "..." }
   ]
 }
 ```
+
+Ordem dos segmentos (narração futura): **quote → source → text**.
+
+Listas editoriais viram segmentos separados (nunca um único parágrafo).
 
 ## Testes automatizados
 
