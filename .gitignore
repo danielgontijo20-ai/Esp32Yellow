@@ -1,0 +1,15 @@
+# Builds gerados (nunca versionar)
+stoic_content_builder/output/build_*/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

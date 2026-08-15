@@ -1,0 +1,6 @@
+# Diário Estoico — Content Builder
+# Dependências padrão: apenas biblioteca padrão do Python (tkinter incluso).
+# Nenhuma dependência externa é necessária para a execução normal.
+#
+# Para desenvolvimento / testes (opcional):
+# pytest>=7.0
