@@ -45,7 +45,8 @@ SAMPLE_RATE: int = 24000
 # Kokoro gera WAV internamente; em seguida convertemos para MP3 via ffmpeg.
 OUTPUT_FORMAT: str = "mp3"  # "mp3" | "wav"
 
-# Bitrate MP3 — 192k é qualidade boa sem compressão excessiva
+# Bitrate MP3 — alvo 192k (em 24 kHz o ffmpeg/LAME pode gravar ~160k,
+# que é o teto típico para MPEG-2 Layer III @ 24 kHz; adequado para voz)
 MP3_BITRATE: str = "192k"
 
 # ---------------------------------------------------------------------------

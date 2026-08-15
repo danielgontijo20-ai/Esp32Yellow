@@ -159,3 +159,8 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements-audio.txt
 python generate_audio.py --mode test
 ```
+
+## Privacidade
+
+- Content Builder: 100% local, sem APIs
+- Audio Builder: síntese local com Kokoro; internet só no download inicial do modelo

@@ -89,6 +89,9 @@ Isso gera **apenas**:
 Kokoro gera WAV internamente (24 kHz). Em seguida o `ffmpeg` converte para MP3
 (`192k` por padrão — configurável).
 
+> **Nota:** em 24 kHz, o LAME costuma gravar MP3 em ~160 kbps (limite do
+> MPEG-2 Layer III nessa taxa). Isso é normal e adequado para narração.
+
 ## 6. Como gerar as 366 lições depois
 
 1. Em `src/audio/config.py`, altere:
