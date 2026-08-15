@@ -57,7 +57,23 @@ pip install -U pip
 pip install -r requirements-audio.txt
 ```
 
-## 2. Baixar / preparar o modelo Kokoro
+## FFmpeg (necessário para MP3)
+
+O Kokoro gera **WAV**. Para MP3 é preciso o `ffmpeg` no PATH.
+
+**Windows (rápido):**
+1. Baixe: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip
+2. Extraia, por exemplo, em `C:\ffmpeg`
+3. Adicione `C:\ffmpeg\bin` ao PATH do Windows
+4. Feche e abra um Prompt novo
+5. Teste: `ffmpeg -version`
+
+Sem ffmpeg, o Audio Builder salva automaticamente `.wav` em `audio_test/`.
+
+Ou force WAV em `src/audio/config.py`:
+```python
+OUTPUT_FORMAT = "wav"
+```
 
 Na **primeira execução**, o Kokoro baixa automaticamente o modelo
 `hexgrad/Kokoro-82M` do Hugging Face (~centenas de MB).

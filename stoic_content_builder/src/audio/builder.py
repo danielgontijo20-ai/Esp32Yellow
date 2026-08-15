@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 from . import config
-from .convert import probe_duration_seconds, wav_to_mp3
+from .convert import ffmpeg_available, probe_duration_seconds, wav_to_mp3
 from .kokoro_engine import KokoroEngine
 from .narrative import build_narrative_from_segments
 from .report import AudioItemResult, AudioReport, write_audio_report
@@ -82,6 +82,21 @@ def generate_lesson_audio(
 
         fmt = config.OUTPUT_FORMAT.lower()
         if fmt == "mp3":
+            if not ffmpeg_available():
+                # Fallback automático: salva WAV com o mesmo número de lição
+                wav_out = output_file.with_suffix(".wav")
+                wav_out.write_bytes(wav_path.read_bytes())
+                if not keep_wav and wav_path.exists() and wav_path.resolve() != wav_out.resolve():
+                    wav_path.unlink()
+                size = wav_out.stat().st_size
+                return AudioItemResult(
+                    lesson_id=lesson_id,
+                    filename=wav_out.name,
+                    status="OK",
+                    duration_sec=duration,
+                    size_bytes=size,
+                    error="ffmpeg ausente — salvo como WAV",
+                )
             wav_to_mp3(wav_path, output_file)
             if not keep_wav and wav_path.exists():
                 wav_path.unlink()
@@ -145,6 +160,11 @@ def run_audio_build(
     log(f"Modo: {mode.upper()}")
     log(f"Voz: {config.VOICE} (lang={config.LANG_CODE})")
     log(f"Formato: {ext} @ {config.SAMPLE_RATE} Hz, bitrate={config.MP3_BITRATE}")
+    if ext == "mp3" and not ffmpeg_available():
+        log(
+            "AVISO: ffmpeg não encontrado no PATH. "
+            "Os arquivos serão salvos como .wav (fallback)."
+        )
     log(f"Saída: {out_dir}")
     log(f"Lições: {lesson_ids}")
 
