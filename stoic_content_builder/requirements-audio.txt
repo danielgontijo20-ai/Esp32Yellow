@@ -1,0 +1,6 @@
+# Diário Estoico — Audio Builder (Kokoro TTS offline)
+# Instalar em um venv separado do Content Builder (recomendado).
+
+kokoro>=0.9.4
+soundfile>=0.12
+numpy>=1.26

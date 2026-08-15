@@ -147,9 +147,15 @@ python -c "from pathlib import Path; from src.builder import process_file; r=pro
 | `src/models.py` | Estruturas de dados |
 | `src/builder.py` | Geração de JSON e relatório |
 
-## Privacidade
+## Audio Builder (Kokoro)
 
-- 100% local
-- Sem APIs externas
-- Sem OpenAI / Gemini / nuvem
-- Nenhum conteúdo é enviado à internet
+Para gerar os MP3 de teste a partir dos JSON:
+
+veja [`AUDIO.md`](AUDIO.md).
+
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements-audio.txt
+python generate_audio.py --mode test
+```
