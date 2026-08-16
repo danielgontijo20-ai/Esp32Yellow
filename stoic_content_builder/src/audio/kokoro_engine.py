@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-import numpy as np
-import soundfile as sf
+from typing import Any
 
 from . import config
 
@@ -31,8 +29,6 @@ class KokoroEngine:
     def _ensure_pipeline(self) -> None:
         if self._pipeline is not None:
             return
-        # Import lazy: permite carregar o módulo sem Kokoro instalado
-        # (ex.: só Content Builder).
         from kokoro import KPipeline
 
         self._pipeline = KPipeline(
@@ -40,15 +36,17 @@ class KokoroEngine:
             repo_id=self.repo_id,
         )
 
-    def synthesize_to_array(self, text: str) -> np.ndarray:
+    def synthesize_to_array(self, text: str) -> Any:
         """Gera áudio float32 mono a partir do texto."""
+        import numpy as np
+
         if not text or not text.strip():
             raise ValueError("Texto vazio — nada para sintetizar.")
 
         self._ensure_pipeline()
         assert self._pipeline is not None
 
-        chunks: list[np.ndarray] = []
+        chunks: list = []
         for _gs, _ps, audio in self._pipeline(
             text, voice=self.voice, speed=self.speed
         ):
@@ -65,6 +63,8 @@ class KokoroEngine:
 
     def synthesize_to_wav(self, text: str, wav_path: Path) -> tuple[Path, float]:
         """Sintetiza e grava WAV. Retorna (caminho, duração_segundos)."""
+        import soundfile as sf
+
         wav_path = Path(wav_path)
         wav_path.parent.mkdir(parents=True, exist_ok=True)
 

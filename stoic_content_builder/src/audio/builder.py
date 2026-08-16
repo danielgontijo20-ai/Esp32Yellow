@@ -126,6 +126,156 @@ def generate_lesson_audio(
         )
 
 
+def load_lesson_from_txt(path: Path) -> dict:
+    """Parseia um TXT de lição com o parser do Content Builder.
+
+    Não altera o arquivo. Retorna o dict no mesmo formato do lesson.json.
+    """
+    from src.parser import parse_text
+
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Arquivo não encontrado: {path}")
+
+    raw = path.read_text(encoding="utf-8")
+    if not raw.strip():
+        raise ValueError(f"Arquivo vazio: {path.name}")
+
+    lessons, _warnings = parse_text(raw)
+    if not lessons:
+        raise ValueError(
+            f"Nenhuma lição encontrada em {path.name}. "
+            "Verifique se o TXT contém data no formato '1° de janeiro'."
+        )
+
+    # Um TXT da GUI = uma lição (usa a primeira se houver mais)
+    lesson = lessons[0]
+    data = lesson.to_dict()
+    return data
+
+
+def peek_txt_label(path: Path) -> str:
+    """Rótulo amigável para a lista da GUI: '001.txt — data — título'."""
+    path = Path(path)
+    try:
+        lesson = load_lesson_from_txt(path)
+        date = lesson.get("date") or "?"
+        title = lesson.get("title") or "?"
+        return f"{path.name} — {date} — {title}"
+    except Exception as exc:  # noqa: BLE001
+        return f"{path.name} — (erro ao ler: {exc})"
+
+
+def resolve_output_stem(txt_path: Path, lesson: dict) -> str:
+    """Nome base do áudio: preferir 001 do arquivo; senão id da lição."""
+    stem = Path(txt_path).stem.strip()
+    if stem.isdigit():
+        return f"{int(stem):03d}"
+    return f"{int(lesson['id']):03d}"
+
+
+def run_audio_from_txt_files(
+    txt_paths: list[Path],
+    output_dir: Path,
+    *,
+    voice: str | None = None,
+    log_callback=None,
+    progress_callback=None,
+) -> AudioReport:
+    """Gera áudios a partir de uma lista de TXT (usado pela GUI e testes).
+
+    Reutiliza generate_lesson_audio / KokoroEngine.
+    Não sobrescreve arquivos existentes — a GUI deve filtrar antes.
+    """
+
+    def log(msg: str) -> None:
+        if log_callback:
+            log_callback(msg)
+        else:
+            print(msg)
+
+    def progress(current: int, total: int, message: str) -> None:
+        if progress_callback:
+            progress_callback(current, total, message)
+
+    # Aplica voz sem alterar o default permanente do módulo se None
+    previous_voice = config.VOICE
+    if voice:
+        config.VOICE = voice
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ext = config.OUTPUT_FORMAT.lower()
+    paths = [Path(p) for p in txt_paths]
+
+    report = AudioReport(mode="gui")
+    started = time.perf_counter()
+    total = len(paths)
+
+    log("Iniciando geração...")
+    log(f"Voz: {config.VOICE} (lang={config.LANG_CODE})")
+    log(f"Formato: {ext} @ {config.SAMPLE_RATE} Hz")
+    log(f"Saída: {out_dir}")
+    if ext == "mp3" and not ffmpeg_available():
+        log("AVISO: ffmpeg não encontrado — fallback para WAV.")
+
+    try:
+        engine = KokoroEngine()
+        for index, txt_path in enumerate(paths, start=1):
+            progress(index - 1, total, f"Gerando: {txt_path.name}")
+            log(f"[{index}/{total}] {txt_path.name}")
+
+            try:
+                lesson = load_lesson_from_txt(txt_path)
+                stem = resolve_output_stem(txt_path, lesson)
+                # Garante id coerente com o nome do arquivo de saída
+                lesson = dict(lesson)
+                lesson["id"] = int(stem)
+                out_file = out_dir / f"{stem}.{ext}"
+
+                if out_file.exists():
+                    item = AudioItemResult(
+                        lesson_id=int(stem),
+                        filename=out_file.name,
+                        status="ERRO",
+                        error=f"Arquivo já existe (não sobrescrito): {out_file.name}",
+                    )
+                else:
+                    item = generate_lesson_audio(lesson, out_file, engine)
+
+                report.items.append(item)
+                if item.status == "OK":
+                    from .report import format_bytes, format_duration
+
+                    log(f"Áudio gerado: {item.filename}")
+                    log(f"Duração: {format_duration(item.duration_sec)}")
+                    log(f"Tamanho: {format_bytes(item.size_bytes)}")
+                    progress(index, total, f"Concluído: {item.filename}")
+                else:
+                    log(f"ERRO: {item.error}")
+                    progress(index, total, f"Erro: {txt_path.name}")
+            except Exception as exc:  # noqa: BLE001
+                item = AudioItemResult(
+                    lesson_id=0,
+                    filename=txt_path.name,
+                    status="ERRO",
+                    error=str(exc),
+                )
+                report.items.append(item)
+                log(f"ERRO: {exc}")
+                progress(index, total, f"Erro: {txt_path.name}")
+    finally:
+        config.VOICE = previous_voice
+
+    report.elapsed_sec = time.perf_counter() - started
+    report_path = out_dir / "report.txt"
+    write_audio_report(report, report_path)
+    log("Processamento concluído.")
+    log(f"Relatório: {report_path}")
+    progress(total, total, "Concluído")
+    return report
+
+
 def run_audio_build(
     *,
     mode: str | None = None,

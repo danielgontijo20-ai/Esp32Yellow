@@ -3,6 +3,7 @@ stoic_content_builder/output/build_*/
 
 # Áudio gerado / temporários
 stoic_content_builder/audio_test/
+stoic_content_builder/audio_test_gui/
 stoic_content_builder/audio/
 stoic_content_builder/audio_temp/
 *.mp3

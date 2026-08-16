@@ -100,7 +100,20 @@ Ou na linha de comando:
 python generate_audio.py --mode test --voice pm_alex
 ```
 
-## 4. Executar o modo TESTE
+## Interface gráfica (Tkinter)
+
+```bash
+cd stoic_content_builder
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+python audio_gui.py
+```
+
+1. Clique em **Selecionar arquivos** e escolha um ou mais `.txt` (ex.: `input/lessons_txt/001.txt`)
+2. Escolha a **Voz** (`pf_dora` / `pm_alex`)
+3. Pasta de destino padrão: `audio_test_gui/`
+4. Clique em **GERAR ÁUDIOS**
+
+A GUI reutiliza o mesmo Kokoro do `generate_audio.py` (não altera a CLI).
 
 Pré-requisito: já existir um build do Content Builder em `output/build_*/lessons/`.
 

@@ -24,6 +24,9 @@ TEST_LESSON_IDS: list[int] = [1, 7, 10]
 # ---------------------------------------------------------------------------
 # Kokoro TTS
 # ---------------------------------------------------------------------------
+# Vozes pt-BR disponíveis (a interface e a CLI podem escolher entre estas)
+AVAILABLE_VOICES: list[str] = ["pf_dora", "pm_alex", "pm_santa"]
+
 # Vozes pt-BR: pf_dora (F), pm_alex (M), pm_santa (M)
 VOICE: str = "pf_dora"
 
@@ -58,6 +61,7 @@ LESSONS_BUILD_DIR: Path | None = None
 
 OUTPUT_DIR_TEST: Path = PROJECT_ROOT / "audio_test"
 OUTPUT_DIR_FULL: Path = PROJECT_ROOT / "audio"
+OUTPUT_DIR_GUI: Path = PROJECT_ROOT / "audio_test_gui"
 
 # WAV temporários (apagados após conversão para MP3, se FORMAT=mp3)
 TEMP_WAV_DIR: Path = PROJECT_ROOT / "audio_temp"
