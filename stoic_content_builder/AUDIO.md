@@ -102,11 +102,24 @@ python generate_audio.py --mode test --voice pm_alex
 
 ## Interface gráfica (Tkinter)
 
+No Windows, **prefira o atalho**:
+
+```bat
+audio_gui.bat
+```
+
+(duplo clique). Ele usa automaticamente o Python do `.venv`.
+
+Ou pelo Prompt (com venv ativo):
+
 ```bash
 cd stoic_content_builder
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 python audio_gui.py
 ```
+
+> Se abrir `audio_gui.py` com duplo clique, o Windows pode usar outro Python
+> (sem `soundfile`/`kokoro`) e a geração falha.
 
 1. Clique em **Selecionar arquivos** e escolha um ou mais `lesson.json`
    (ex.: `output/build_.../lessons/001/lesson.json`)

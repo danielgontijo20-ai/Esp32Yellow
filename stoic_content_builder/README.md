@@ -162,7 +162,18 @@ python generate_audio.py --mode test
 
 ### Interface gráfica
 
+No Windows, dê duplo clique em:
+
+```text
+audio_gui.bat
+```
+
+(Isso usa o `.venv` certo. Abrir `audio_gui.py` direto pode falhar com `No module named 'soundfile'`.)
+
+Ou no Prompt:
+
 ```bash
+.venv\Scripts\activate
 python audio_gui.py
 ```
 
