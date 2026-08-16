@@ -38,15 +38,17 @@ class TestJsonToLesson(unittest.TestCase):
         self.assertIn("janeiro", lesson["date"])
         self.assertTrue(lesson["segments"])
         types = [s["type"] for s in lesson["segments"]]
-        self.assertIn("quote", types)
-        self.assertIn("source", types)
-        self.assertIn("text", types)
+        self.assertTrue(all(t == "text" for t in types))
+        self.assertIn("quote", lesson)
+        self.assertIn("source", lesson["quote"])
 
-    def test_narrative_order(self) -> None:
+    def test_narrative_from_reflection_segments(self) -> None:
         lesson = load_lesson(self.path_007)
         narrative = build_narrative_from_segments(lesson["segments"])
-        self.assertIn("EPICTETO", narrative)
-        self.assertNotIn("AS SETE FUNÇÕES", narrative.split("EPICTETO")[0])
+        # Segments atuais = reflexão; citação fica em quote.*
+        self.assertIn("Vamos decompor", narrative)
+        self.assertNotIn("EPICTETO", narrative)
+        self.assertIn("EPICTETO", lesson["quote"]["source"])
 
     def test_peek_label(self) -> None:
         label = peek_json_label(self.path_001)

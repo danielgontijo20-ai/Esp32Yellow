@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 from .models import Lesson, ParseReport, ValidationIssue
 from .parser import DAYS_IN_MONTH_LEAP, MONTHS, date_to_day_of_year, format_date_display
 
 
+def _normalize_content(text: str) -> str:
+    """Normaliza espaços/quebras para comparação segments ↔ text."""
+    return re.sub(r"\s+", " ", text.replace("\n", " ")).strip()
+
+
 def validate_lesson(lesson: Lesson) -> list[ValidationIssue]:
-    """Valida campos obrigatórios de uma única lição."""
+    """Valida campos obrigatórios e regras de segments de uma lição."""
     issues: list[ValidationIssue] = []
     lid = lesson.id
 
+    # 1) Campos obrigatórios da lição
     if lesson.id < 1 or lesson.id > 366:
         issues.append(
             ValidationIssue("error", lid, f"ID fora do intervalo 1–366: {lesson.id}")
@@ -24,6 +31,7 @@ def validate_lesson(lesson: Lesson) -> list[ValidationIssue]:
     if not lesson.title or not lesson.title.strip():
         issues.append(ValidationIssue("error", lid, "Campo 'title' vazio."))
 
+    # 2) quote.text / quote.source
     if not lesson.quote.text or not lesson.quote.text.strip():
         issues.append(ValidationIssue("error", lid, "Campo 'quote.text' vazio."))
 
@@ -35,56 +43,89 @@ def validate_lesson(lesson: Lesson) -> list[ValidationIssue]:
 
     if not lesson.segments:
         issues.append(
-            ValidationIssue("warning", lid, "Nenhum segmento gerado.")
+            ValidationIssue("error", lid, "Campo 'segments' vazio.")
         )
     else:
-        allowed_types = {"quote", "source", "text"}
-        seen_types: list[str] = []
         for seg in lesson.segments:
+            # 3) Proibido type quote/source nos segments
+            if seg.type in ("quote", "source"):
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        lid,
+                        f"Segmento {seg.id} com type={seg.type!r}; "
+                        "citação deve existir só em quote.",
+                    )
+                )
+            # 4) Todo segment: id, type=text, text
+            elif seg.type != "text":
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        lid,
+                        f"Segmento {seg.id} com type inválido: {seg.type!r} "
+                        "(esperado 'text').",
+                    )
+                )
+
+            if seg.id < 1:
+                issues.append(
+                    ValidationIssue(
+                        "error", lid, f"Segmento com id inválido: {seg.id}"
+                    )
+                )
+
             if not seg.text or not seg.text.strip():
                 issues.append(
                     ValidationIssue(
                         "error", lid, f"Segmento {seg.id} com texto vazio."
                     )
                 )
-            if seg.type not in allowed_types:
+                continue
+
+            # 5) Não terminar no meio de uma palavra (hífen de OCR residual)
+            if re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ]-$", seg.text.rstrip()):
                 issues.append(
                     ValidationIssue(
                         "error",
                         lid,
-                        f"Segmento {seg.id} com type inválido: {seg.type!r}",
+                        f"Segmento {seg.id} termina no meio de uma palavra "
+                        "(hífen residual).",
                     )
                 )
-            else:
-                seen_types.append(seg.type)
 
-        # Ordem esperada da narração: quote → source → text
-        if seen_types:
-            order_rank = {"quote": 0, "source": 1, "text": 2}
-            ranks = [order_rank[t] for t in seen_types]
-            if ranks != sorted(ranks):
+            # 6) Não terminar com quebra artificial de OCR
+            if seg.text.endswith("\n") or seg.text.endswith("\r"):
                 issues.append(
                     ValidationIssue(
-                        "warning",
+                        "error",
                         lid,
-                        "Segmentos fora da ordem quote → source → text.",
+                        f"Segmento {seg.id} termina com quebra de linha "
+                        "artificial.",
                     )
                 )
-            if "quote" not in seen_types and lesson.quote.text.strip():
+
+        # 7) Conteúdo concatenado dos segments ≈ reflexão (normalizado)
+        if lesson.text.strip() and lesson.segments:
+            seg_blob = _normalize_content(
+                " ".join(s.text for s in lesson.segments if s.text)
+            )
+            text_blob = _normalize_content(lesson.text)
+            if seg_blob != text_blob:
                 issues.append(
                     ValidationIssue(
-                        "warning", lid, "Citação não aparece nos segmentos."
+                        "error",
+                        lid,
+                        "Conteúdo dos segments não corresponde ao campo "
+                        "'text' (após normalizar espaços/quebras).",
                     )
                 )
-            if "source" not in seen_types and lesson.quote.source.strip():
-                issues.append(
-                    ValidationIssue(
-                        "warning", lid, "Fonte não aparece nos segmentos."
-                    )
-                )
+
+    # 8) text permanece disponível independentemente (já validado acima)
 
     # Propaga avisos/erros do parser
     for w in lesson.warnings:
+        # Título multilinha por OCR não é erro
         issues.append(ValidationIssue("warning", lid, w))
     for e in lesson.errors:
         issues.append(ValidationIssue("error", lid, e))

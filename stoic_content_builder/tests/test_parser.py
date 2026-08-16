@@ -24,6 +24,7 @@ from src.validator import validate_all
 
 
 SAMPLE_PATH = ROOT / "input" / "amostra_10_licoes.txt"
+ESTOICO_PATH = ROOT / "input" / "Estoico_1_10.txt"
 
 
 class TestCleaner(unittest.TestCase):
@@ -124,34 +125,32 @@ class TestParserSample(unittest.TestCase):
                 len(lesson.segments), 1, f"Sem segmentos: {lesson.date}"
             )
 
-    def test_segments_include_quote_source_text(self) -> None:
+    def test_segments_are_text_only(self) -> None:
         for lesson in self.lessons:
             types = [s.type for s in lesson.segments]
-            self.assertIn("quote", types, f"Sem quote: {lesson.date}")
-            self.assertIn("source", types, f"Sem source: {lesson.date}")
-            self.assertIn("text", types, f"Sem text: {lesson.date}")
-            # Ordem quote → source → text
-            rank = {"quote": 0, "source": 1, "text": 2}
-            ranks = [rank[t] for t in types]
-            self.assertEqual(ranks, sorted(ranks), f"Ordem inválida: {types}")
+            self.assertTrue(types, f"Sem segments: {lesson.date}")
+            self.assertTrue(
+                all(t == "text" for t in types),
+                f"Types inesperados em {lesson.date}: {types}",
+            )
+            self.assertNotIn("quote", types)
+            self.assertNotIn("source", types)
 
-    def test_segment_source_matches_quote_source(self) -> None:
+    def test_quote_not_duplicated_in_segments(self) -> None:
         for lesson in self.lessons:
-            source_segs = [s for s in lesson.segments if s.type == "source"]
-            self.assertEqual(len(source_segs), 1)
-            self.assertEqual(source_segs[0].text, lesson.quote.source)
+            blob = "\n".join(s.text for s in lesson.segments)
+            # Fonte tipicamente só em quote.source
+            self.assertNotIn(lesson.quote.source, blob)
 
     def test_list_items_not_merged_in_segments(self) -> None:
         lesson7 = self.lessons[6]
-        text_segs = [s.text for s in lesson7.segments if s.type == "text"]
+        text_segs = [s.text for s in lesson7.segments]
         joined = "\n".join(text_segs)
         self.assertIn("1. Observe seus juízos.", joined)
         self.assertIn("2. Distinga o que depende de você.", joined)
         self.assertIn("3. Aja com justiça e coragem.", joined)
-        # Itens podem ficar no mesmo segment, mas com \n — nunca com espaço
+        # Itens no mesmo segment com \n — nunca colados com espaço
         for seg in lesson7.segments:
-            if seg.type != "text":
-                continue
             if "1. Observe" in seg.text and "2. Distinga" in seg.text:
                 self.assertIn("\n", seg.text)
                 self.assertNotIn("juízos. 2.", seg.text)
@@ -175,19 +174,40 @@ class TestEstoico110(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        path = ROOT / "input" / "Estoico_1_10.txt"
-        cls.path = path
-        cls.lessons, _ = parse_text(path.read_text(encoding="utf-8"))
+        cls.path = ESTOICO_PATH
+        cls.lessons, _ = parse_text(cls.path.read_text(encoding="utf-8"))
+        cls.report = validate_all(cls.lessons, cls.path.name)
 
     def test_ten_lessons(self) -> None:
         self.assertEqual(len(self.lessons), 10)
+        self.assertEqual(self.report.lessons_found, 10)
 
-    def test_lesson7_emdash_list_preserves_newlines(self) -> None:
+    def test_zero_errors(self) -> None:
+        self.assertEqual(self.report.error_count(), 0)
+
+    def test_lesson3_paragraph_blocks(self) -> None:
+        lesson3 = self.lessons[2]
+        self.assertEqual(lesson3.id, 3)
+        self.assertEqual(
+            lesson3.title,
+            "SER IMPIEDOSO COM AS COISAS QUE NÃO IMPORTAM",
+        )
+        types = [s.type for s in lesson3.segments]
+        self.assertTrue(all(t == "text" for t in types))
+        # Quebras OCR de prosa devem virar espaço (não \n artificial)
+        for seg in lesson3.segments:
+            self.assertFalse(seg.text.endswith("\n"))
+            # Prosa contínua: sem quebra de linha OCR residual
+            if "—" not in seg.text and not re_listish(seg.text):
+                self.assertNotIn("\n", seg.text)
+
+    def test_lesson7_emdash_list_one_block(self) -> None:
         lesson7 = self.lessons[6]
         self.assertEqual(lesson7.id, 7)
-        text_segs = [s for s in lesson7.segments if s.type == "text"]
-        blob = "\n".join(s.text for s in text_segs)
-        for label in (
+        text_segs = lesson7.segments
+        self.assertTrue(all(s.type == "text" for s in text_segs))
+
+        labels = (
             "Escolha —",
             "Recusa —",
             "Anseio —",
@@ -195,49 +215,83 @@ class TestEstoico110(unittest.TestCase):
             "Preparação —",
             "Objetivo —",
             "Consentimento —",
-        ):
-            self.assertIn(label, blob)
-        # Não pode aparecer colado com espaço entre itens
-        self.assertNotIn("corretamente Recusa", blob)
-        # Em algum segment (ou no conjunto) as quebras devem existir
-        found_structured = False
+        )
+        list_seg = None
         for seg in text_segs:
-            if "Escolha —" in seg.text and "Recusa —" in seg.text:
-                self.assertIn("\n", seg.text)
-                self.assertNotIn("corretamente Recusa", seg.text)
-                found_structured = True
-            elif "Escolha —" in seg.text:
-                # item isolado também é válido
-                found_structured = True
-        self.assertTrue(found_structured)
+            if "Escolha —" in seg.text:
+                list_seg = seg
+                break
+        self.assertIsNotNone(list_seg)
+        assert list_seg is not None
+        for label in labels:
+            self.assertIn(label, list_seg.text)
+        # Um único segment com a lista completa; itens separados por \n
+        self.assertIn("\n", list_seg.text)
+        self.assertNotIn("corretamente Recusa", list_seg.text)
+        # Não fragmentar a lista por limite de caracteres
+        list_hits = sum(1 for s in text_segs if "Escolha —" in s.text)
+        self.assertEqual(list_hits, 1)
 
-    def test_lesson1_serenity_prayer_not_cut_badly(self) -> None:
+    def test_lesson9_text_only_segments(self) -> None:
+        lesson9 = self.lessons[8]
+        self.assertEqual(lesson9.id, 9)
+        self.assertTrue(lesson9.segments)
+        self.assertTrue(all(s.type == "text" for s in lesson9.segments))
+        self.assertNotIn("quote", [s.type for s in lesson9.segments])
+        self.assertIn("EPICTETO", lesson9.quote.source)
+        blob = "\n".join(s.text for s in lesson9.segments)
+        self.assertNotIn(lesson9.quote.source, blob)
+
+    def test_lesson1_serenity_in_quote_not_cut(self) -> None:
         lesson1 = self.lessons[0]
         prayer = (
             "Deus, concedei-me a serenidade para aceitar as coisas que não posso mudar, "
             "a coragem para mudar as coisas que posso e a sabedoria para distingui-las."
         )
-        # A oração completa deve aparecer em algum segment (quote ou text),
-        # sem corte no meio da frase.
-        found = False
-        for seg in lesson1.segments:
-            flat = seg.text.replace("\n", " ")
-            if "concedei-me a serenidade" in flat:
-                self.assertIn("sabedoria para distingui-las", flat)
-                # Não cortar antes do fim da oração no mesmo segment
-                self.assertIn(prayer, flat)
-                found = True
-        self.assertTrue(found, "Prece da Serenidade não encontrada intacta nos segments")
+        # Prece fica na citação (campo quote), não nos segments da reflexão
+        flat_quote = lesson1.quote.text.replace("\n", " ")
+        if "concedei-me a serenidade" in flat_quote:
+            self.assertIn(prayer, flat_quote)
+        # Reflexão nos segments sem type quote
+        self.assertTrue(all(s.type == "text" for s in lesson1.segments))
 
-    def test_segment_order_quote_source_text(self) -> None:
-        for lesson in self.lessons:
-            types = [s.type for s in lesson.segments]
-            self.assertIn("quote", types)
-            self.assertIn("source", types)
-            self.assertIn("text", types)
-            rank = {"quote": 0, "source": 1, "text": 2}
-            ranks = [rank[t] for t in types]
-            self.assertEqual(ranks, sorted(ranks))
+
+def re_listish(text: str) -> bool:
+    return bool(
+        any(
+            line.strip().startswith(("1.", "2.", "3.", "•", "-"))
+            or " — " in line
+            for line in text.split("\n")
+        )
+    )
+
+
+class TestOcrNormalization(unittest.TestCase):
+    def test_ocr_wrap_inside_editorial_item(self) -> None:
+        raw = """7 de janeiro
+AS SETE FUNÇÕES CLARAS DA MENTE
+
+Citação de teste sobre a mente e suas funções claras no cotidiano.
+
+EPICTETO, DISCURSOS, 4.11.6-7
+
+Vamos decompor:
+
+Escolha — fazer e pensar corretamente
+Preparação — para o que quer que
+possa acontecer
+Objetivo — nosso princípio
+
+É para isso que serve a mente.
+"""
+        lessons, _ = parse_text(raw)
+        self.assertEqual(len(lessons), 1)
+        lesson = lessons[0]
+        list_seg = next(s for s in lesson.segments if "Preparação —" in s.text)
+        self.assertIn("para o que quer que possa acontecer", list_seg.text)
+        self.assertNotIn("que\npossa", list_seg.text)
+        self.assertIn("Escolha —", list_seg.text)
+        self.assertIn("Objetivo —", list_seg.text)
 
 
 class TestBuilderIntegration(unittest.TestCase):
@@ -260,12 +314,10 @@ class TestBuilderIntegration(unittest.TestCase):
                 self.assertIn("text", data)
                 self.assertIn("segments", data)
                 self.assertTrue(data["segments"])
-                self.assertEqual(data["segments"][0]["type"], "quote")
-                types = [s["type"] for s in data["segments"]]
-                self.assertIn("source", types)
-                self.assertIn("text", types)
+                self.assertIn("text", data["quote"])
+                self.assertIn("source", data["quote"])
                 for seg in data["segments"]:
-                    self.assertIn(seg["type"], ("quote", "source", "text"))
+                    self.assertEqual(seg["type"], "text")
                     self.assertIn("text", seg)
                     self.assertIn("id", seg)
                 # Sem campos de áudio nesta versão
@@ -275,6 +327,7 @@ class TestBuilderIntegration(unittest.TestCase):
 
             report = validate_all(result.lessons, SAMPLE_PATH.name)
             self.assertEqual(report.lessons_found, 10)
+            self.assertEqual(report.error_count(), 0)
             self.assertEqual(report.first_date, "1° de janeiro")
             self.assertEqual(report.last_date, "10 de janeiro")
 

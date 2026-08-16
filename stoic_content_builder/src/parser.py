@@ -91,11 +91,6 @@ SOURCE_PATTERN = re.compile(
     re.UNICODE,
 )
 
-# Segmentação: tamanho alvo aproximado (caracteres)
-SEGMENT_TARGET_CHARS = 180
-SEGMENT_MAX_CHARS = 280
-
-
 @dataclass
 class RawLessonBlock:
     """Bloco bruto entre duas datas."""
@@ -183,16 +178,26 @@ def looks_like_list_line(line: str) -> bool:
 
 
 def looks_like_editorial_item(line: str) -> bool:
-    """Item editorial em linha própria (lista numerada ou 'Rótulo — texto')."""
+    """Item editorial em linha própria (lista numerada ou 'Rótulo — texto').
+
+    O rótulo antes do travessão deve ser curto (ex.: Escolha, Preparação).
+    Não confundir com prosa que usa travessão no meio da frase.
+    """
     s = line.strip()
     if not s:
         return False
     if looks_like_list_line(s):
         return True
-    # Ex.: "Escolha — fazer e pensar corretamente"
-    if re.match(r"^.{1,50}\s+[—–]\s+\S", s):
-        return True
-    return False
+    m = re.match(r"^(.{1,40}?)\s+[—–]\s+\S", s)
+    if not m:
+        return False
+    label = m.group(1).strip()
+    if re.search(r"[.!?:,;]", label):
+        return False
+    words = label.split()
+    if not words or len(words) > 3 or len(label) > 30:
+        return False
+    return True
 
 
 def split_into_blocks(lines: list[str]) -> list[RawLessonBlock]:
@@ -312,12 +317,28 @@ def extract_quote_and_rest(
     return quote_text, source, rest_start, warnings
 
 
+def _is_editorial_continuation(prev_item: str, line: str) -> bool:
+    """True se `line` é continuação OCR do item editorial anterior.
+
+    Ex.: "Preparação — para o que quer que\\npossa acontecer"
+    """
+    if looks_like_editorial_item(line) or looks_like_list_line(line):
+        return False
+    # Item anterior já fechou frase → novo bloco de prosa
+    if re.search(r"[.!?…»”\"]\s*$", prev_item):
+        return False
+    first_alpha = next((c for c in line if c.isalpha()), "")
+    # Continuação tipográfica do OCR costuma começar em minúscula
+    return bool(first_alpha and first_alpha.islower())
+
+
 def _join_paragraphs(lines: list[str]) -> str:
     """Junta linhas preservando parágrafos (linha em branco).
 
-    Linhas de prosa quebradas pelo OCR são unidas com espaço.
-    Itens de lista editorial NÃO são fundidos num parágrafo único:
-    cada item permanece em sua própria linha (quebra significativa).
+    - Prosa quebrada pelo OCR: linhas unidas com espaço.
+    - Listas / itens 'Rótulo — texto': um bloco com \\n entre itens.
+    - Continuação OCR de um item editorial: junta com espaço no mesmo item.
+    - Linha em branco: separa blocos/parágrafos reais.
     """
     paragraphs: list[str] = []
     current_prose: list[str] = []
@@ -342,9 +363,11 @@ def _join_paragraphs(lines: list[str]) -> str:
             flush_list()
             continue
         stripped = line.strip()
-        if looks_like_list_line(stripped):
+        if looks_like_editorial_item(stripped) or looks_like_list_line(stripped):
             flush_prose()
             current_list.append(stripped)
+        elif current_list and _is_editorial_continuation(current_list[-1], stripped):
+            current_list[-1] = clean_inline(f"{current_list[-1]} {stripped}")
         else:
             flush_list()
             current_prose.append(stripped)
@@ -366,290 +389,33 @@ def extract_reflection(body_lines: list[str], start: int) -> tuple[str, list[str
     return text, warnings
 
 
-def build_lesson_segments(
-    quote_text: str,
-    source: str,
-    reflection: str,
-    *,
-    quote_lines: list[str] | None = None,
-    reflection_lines: list[str] | None = None,
-) -> list[Segment]:
-    """Monta segmentos na ordem de narração: quote → source → text.
+def reflection_blocks(reflection: str) -> list[str]:
+    """Divide a reflexão em blocos/parágrafos lógicos.
 
-    O campo `text` da lição permanece intacto; esta função só gera `segments`.
-
-    Quando `quote_lines` / `reflection_lines` são fornecidas (linhas brutas do
-    TXT), as quebras de linha originais são preservadas — nunca convertidas
-    em espaço.
+    Separador de bloco: linha em branco (\\n\\n) já normalizada em `text`.
+    Quebras \\n internas (listas editoriais) permanecem no mesmo bloco.
+    Não há limite de caracteres — um bloco longo vira um único segment.
     """
-    segments: list[Segment] = []
-    next_id = 1
+    if not reflection or not reflection.strip():
+        return []
+    return [block.strip() for block in reflection.split("\n\n") if block.strip()]
 
-    if quote_lines is not None:
-        quote_chunks = segment_from_lines(quote_lines)
-    else:
-        quote_chunks = segment_body(quote_text)
 
-    for chunk in quote_chunks:
-        segments.append(Segment(id=next_id, type="quote", text=chunk))
-        next_id += 1
+def build_lesson_segments(reflection: str) -> list[Segment]:
+    """Monta segments apenas da reflexão (type=text).
 
-    source_clean = source.strip()
-    if source_clean:
-        segments.append(Segment(id=next_id, type="source", text=source_clean))
-        next_id += 1
-
-    if reflection_lines is not None:
-        text_chunks = segment_from_lines(reflection_lines)
-    else:
-        text_chunks = segment_body(reflection)
-
-    for chunk in text_chunks:
-        segments.append(Segment(id=next_id, type="text", text=chunk))
-        next_id += 1
-
-    return segments
+    A citação permanece somente em quote.text / quote.source — nunca em
+    segments. Cada segment = um parágrafo/bloco lógico do campo `text`.
+    """
+    return [
+        Segment(id=i, type="text", text=chunk)
+        for i, chunk in enumerate(reflection_blocks(reflection), start=1)
+    ]
 
 
 def segment_text(text: str) -> list[Segment]:
-    """Compatibilidade: segmenta apenas reflexão como type=text."""
-    chunks = segment_body(text)
-    return [Segment(id=i, type="text", text=c) for i, c in enumerate(chunks, start=1)]
-
-
-def segment_from_lines(lines: list[str]) -> list[str]:
-    """Segmenta a partir das linhas brutas do TXT.
-
-    Prioridade:
-      1) estrutura / parágrafos originais (\\n\\n)
-      2) quebras de linha originais (\\n) — nunca viram espaço
-      3) frases
-      4) limite de tamanho (último recurso)
-
-    Estruturas editoriais (listas, 'Rótulo — texto') não são cortadas no meio
-    só para caber no limite.
-    """
-    if not lines:
-        return []
-
-    # Normaliza apenas \r; não altera conteúdo editorial
-    norm = [ln.replace("\r", "") for ln in lines]
-
-    # Agrupa em blocos separados por linha em branco (= parágrafo)
-    blocks: list[list[str]] = []
-    current: list[str] = []
-    for ln in norm:
-        if not ln.strip():
-            if current:
-                blocks.append(current)
-                current = []
-            continue
-        current.append(ln.rstrip())
-    if current:
-        blocks.append(current)
-
-    raw_chunks: list[str] = []
-    for block in blocks:
-        raw_chunks.extend(_segment_line_block(block))
-    return raw_chunks
-
-
-def _segment_line_block(lines: list[str]) -> list[str]:
-    """Segmenta um bloco (parágrafo) mantendo \\n entre as linhas."""
-    stripped = [ln.strip() for ln in lines if ln.strip()]
-    if not stripped:
-        return []
-
-    # Bloco editorial (lista / rótulos com travessão): nunca fundir com espaço
-    if _is_editorial_block(stripped):
-        return _segment_editorial_block(stripped)
-
-    # Uma única linha lógica
-    if len(stripped) == 1:
-        return _fit_chunk_preserve(stripped[0])
-
-    # Várias linhas do mesmo parágrafo: preservar \\n (não substituir por espaço)
-    block_text = "\n".join(stripped)
-    return _fit_chunk_preserve(block_text)
-
-
-def _is_editorial_block(lines: list[str]) -> bool:
-    """True se o bloco é lista / itens editoriais em linhas distintas."""
-    if not lines:
-        return False
-    hits = sum(1 for ln in lines if looks_like_editorial_item(ln))
-    return hits >= 1 and hits >= (len(lines) + 1) // 2
-
-
-def _segment_editorial_block(lines: list[str]) -> list[str]:
-    """Mantém itens editoriais intactos; agrupa com \\n se couber no limite."""
-    # Preferir um único segment com \\n se o bloco inteiro couber
-    whole = "\n".join(lines)
-    if len(whole) <= SEGMENT_MAX_CHARS:
-        return [whole]
-
-    # Não cortar item no meio: cada item (ou grupo de itens) é unidade atômica
-    chunks: list[str] = []
-    buf: list[str] = []
-    buf_len = 0
-    for item in lines:
-        extra = len(item) + (1 if buf else 0)
-        if buf and buf_len + extra > SEGMENT_MAX_CHARS:
-            chunks.append("\n".join(buf))
-            buf = [item]
-            buf_len = len(item)
-        else:
-            buf.append(item)
-            buf_len += extra
-    if buf:
-        chunks.append("\n".join(buf))
-    return chunks
-
-
-def segment_body(text: str) -> list[str]:
-    """Segmenta um texto já montado, preservando \\n e \\n\\n existentes.
-
-    Nunca substitui \\n por espaço.
-    """
-    if not text or not text.strip():
-        return []
-
-    # Reutiliza o caminho baseado em linhas para garantir a mesma política
-    # splitlines() remove terminadores mas preserva linhas vazias (= parágrafos)
-    return segment_from_lines(text.splitlines())
-
-
-def _fit_chunk_preserve(text: str) -> list[str]:
-    """Encaixa um bloco sem destruir \\n internos.
-
-    Ordem: bloco inteiro → quebras \\n → frases → tamanho máximo.
-    Ao quebrar por linhas, prefere fechar o segment após linha que
-    termina frase (.!?…) quando isso for razoável.
-    """
-    if not text.strip():
-        return []
-
-    if len(text) <= SEGMENT_MAX_CHARS:
-        return [text]
-
-    # Se há quebras de linha, preferir segmentar por linha (estrutura original)
-    if "\n" in text:
-        parts: list[str] = []
-        buf: list[str] = []
-        buf_len = 0
-
-        def flush() -> None:
-            nonlocal buf, buf_len
-            if buf:
-                parts.append("\n".join(buf))
-                buf = []
-                buf_len = 0
-
-        for line in text.split("\n"):
-            line_st = line.strip()
-            if not line_st:
-                continue
-            extra = len(line_st) + (1 if buf else 0)
-
-            if not buf and len(line_st) > SEGMENT_MAX_CHARS:
-                parts.extend(_split_long_paragraph(line_st))
-                continue
-
-            if buf and buf_len + extra > SEGMENT_MAX_CHARS:
-                flush()
-                buf = [line_st]
-                buf_len = len(line_st)
-            else:
-                buf.append(line_st)
-                buf_len += extra
-
-            # Se já passamos do alvo e a linha atual fecha frase, encerra aqui
-            if (
-                buf
-                and buf_len >= SEGMENT_TARGET_CHARS
-                and re.search(r"[.!?…»”\"]\s*$", line_st)
-            ):
-                flush()
-
-        flush()
-        return parts
-
-    return _split_long_paragraph(text)
-
-
-def _split_long_paragraph(para: str) -> list[str]:
-    """Quebra parágrafo longo preferindo frases inteiras.
-
-    1) Agrupa frases até SEGMENT_TARGET_CHARS
-    2) Permite ultrapassar o alvo até SEGMENT_MAX_CHARS para não cortar frase
-    3) Só força corte no meio se UMA frase sozinha exceder o máximo
-    """
-    # Não operar sobre texto multilinha aqui — quem chama já tratou \\n
-    sentences = re.split(r"(?<=[.!?…])\s+", para)
-    sentences = [s.strip() for s in sentences if s.strip()]
-
-    if not sentences:
-        return [para]
-
-    chunks: list[str] = []
-    buf = ""
-
-    for sent in sentences:
-        if not buf:
-            if len(sent) > SEGMENT_MAX_CHARS:
-                chunks.extend(_force_split(sent))
-            else:
-                buf = sent
-            continue
-
-        # Junta frases com espaço apenas entre frases já lineares (sem \\n)
-        candidate = f"{buf} {sent}"
-        if len(candidate) <= SEGMENT_TARGET_CHARS:
-            buf = candidate
-        elif len(candidate) <= SEGMENT_MAX_CHARS:
-            buf = candidate
-        else:
-            chunks.append(buf)
-            if len(sent) > SEGMENT_MAX_CHARS:
-                chunks.extend(_force_split(sent))
-                buf = ""
-            else:
-                buf = sent
-
-    if buf:
-        chunks.append(buf)
-
-    return chunks
-
-
-def _force_split(text: str) -> list[str]:
-    """Último recurso: quebra por vírgulas / espaços próximos ao alvo."""
-    parts: list[str] = []
-    remaining = text
-    while len(remaining) > SEGMENT_MAX_CHARS:
-        window = remaining[:SEGMENT_MAX_CHARS]
-        cut = window.rfind(", ")
-        if cut < SEGMENT_TARGET_CHARS // 2:
-            cut = window.rfind(" ")
-        if cut <= 0:
-            cut = SEGMENT_TARGET_CHARS
-        parts.append(remaining[:cut].strip().rstrip(","))
-        remaining = remaining[cut:].lstrip(" ,")
-    if remaining.strip():
-        parts.append(remaining.strip())
-    return parts
-
-
-def _quote_lines_before_source(
-    body_lines: list[str], after_title: int, after_quote: int, source: str
-) -> list[str]:
-    """Recupera as linhas brutas da citação (sem alterar o parser de campos)."""
-    quote_lines: list[str] = []
-    for ln in body_lines[after_title:after_quote]:
-        if source and ln.strip() == source.strip():
-            break
-        quote_lines.append(ln)
-    return quote_lines
+    """Compatibilidade: segmenta reflexão como type=text."""
+    return build_lesson_segments(text)
 
 
 def parse_block(block: RawLessonBlock) -> Lesson:
@@ -679,18 +445,7 @@ def parse_block(block: RawLessonBlock) -> Lesson:
     if not reflection:
         errors.append("Texto da reflexão vazio.")
 
-    # Segments a partir das linhas originais — sem alterar quote/text
-    quote_lines = _quote_lines_before_source(
-        block.body_lines, after_title, after_quote, source
-    )
-    reflection_lines = block.body_lines[after_quote:]
-    segments = build_lesson_segments(
-        quote_text,
-        source,
-        reflection,
-        quote_lines=quote_lines,
-        reflection_lines=reflection_lines,
-    )
+    segments = build_lesson_segments(reflection)
 
     return Lesson(
         id=block.day_of_year,

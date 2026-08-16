@@ -109,16 +109,16 @@ Formato de `lesson.json`:
   },
   "text": "...",
   "segments": [
-    { "id": 1, "type": "quote", "text": "..." },
-    { "id": 2, "type": "source", "text": "EPICTETO, DISCURSOS, 2.5.4-5" },
-    { "id": 3, "type": "text", "text": "..." }
+    { "id": 1, "type": "text", "text": "..." },
+    { "id": 2, "type": "text", "text": "..." }
   ]
 }
 ```
 
-Ordem dos segmentos (narração futura): **quote → source → text**.
+`segments` representam apenas os blocos/parágrafos da **reflexão** (`type: "text"`).
+A citação existe somente em `quote.text` / `quote.source` (não é duplicada nos segments).
 
-Listas editoriais viram segmentos separados (nunca um único parágrafo).
+Listas editoriais (`Rótulo — texto` ou itens numerados) ficam em um único segment, com `\n` entre itens.
 
 ## Testes automatizados
 

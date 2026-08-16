@@ -17,18 +17,16 @@ class Quote:
         return {"text": self.text, "source": self.source}
 
 
-# Tipos de segmento na ordem de narração futura: quote → source → text
-SEGMENT_TYPES = ("quote", "source", "text")
+# Segments representam apenas blocos da reflexão
+SEGMENT_TYPES = ("text",)
 
 
 @dataclass
 class Segment:
-    """Segmento curto para exibição/narração futura.
+    """Segmento = parágrafo/bloco lógico da reflexão.
 
     type:
-      - quote  → trecho da citação
-      - source → fonte da citação
-      - text   → trecho da reflexão
+      - text → bloco da reflexão (único tipo permitido)
     """
 
     id: int
