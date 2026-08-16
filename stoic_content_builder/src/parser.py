@@ -85,6 +85,24 @@ KNOWN_AUTHORS = (
     "CRISIPO",
 )
 
+# Forma falada do filósofo em quote.philosopher / narração
+AUTHOR_DISPLAY: dict[str, str] = {
+    "EPICTETO": "Epicteto",
+    "MARCO AURÉLIO": "Marco Aurélio",
+    "MARCO AURELIO": "Marco Aurélio",
+    "SÊNECA": "Sêneca",
+    "SENECA": "Sêneca",
+    "MUSÔNIO RUFO": "Musônio Rufo",
+    "MUSONIO RUFO": "Musônio Rufo",
+    "ZENÃO": "Zenão",
+    "ZENAO": "Zenão",
+    "CLEANTES": "Cleantes",
+    "CRÍSIPO": "Crísipo",
+    "CRISIPO": "Crísipo",
+}
+
+NARRATION_TRANSITION = "Agora vamos para os comentários desta citação."
+
 # Linha de fonte: MAIÚSCULAS, com vírgula e referência numérica
 SOURCE_PATTERN = re.compile(
     r"^[A-ZÀ-Ü][A-ZÀ-Ü\s\-']+,\s+.+\d",
@@ -192,6 +210,8 @@ def looks_like_editorial_item(line: str) -> bool:
     if not m:
         return False
     label = m.group(1).strip()
+    if not label or not label[0].isupper():
+        return False
     if re.search(r"[.!?:,;]", label):
         return False
     words = label.split()
@@ -401,27 +421,89 @@ def reflection_blocks(reflection: str) -> list[str]:
     return [block.strip() for block in reflection.split("\n\n") if block.strip()]
 
 
-def build_lesson_segments(reflection: str) -> list[Segment]:
-    """Monta segments apenas da reflexão (type=text).
+def title_for_narration(title: str) -> str:
+    """Converte título MAIÚSCULO para frase natural na narração.
 
-    A citação permanece somente em quote.text / quote.source — nunca em
-    segments. Cada segment = um parágrafo/bloco lógico do campo `text`.
+    Não altera o campo `title` original — só a frase falada.
+    Ex.: "TORNE SUAS INTENÇÕES CLARAS" → "Torne suas intenções claras"
     """
+    cleaned = clean_inline(title)
+    if not cleaned:
+        return ""
+    lower = cleaned.lower()
+    return lower[0].upper() + lower[1:]
+
+
+def philosopher_from_source(source: str) -> str:
+    """Preenche quote.philosopher a partir do autor conhecido em quote.source.
+
+    Não inventa nomes: se o autor não for reconhecido, retorna string vazia.
+    """
+    if not source or not source.strip():
+        return ""
+    head = source.split(",", 1)[0].strip().upper()
+    if not head:
+        return ""
+    for author in sorted(KNOWN_AUTHORS, key=len, reverse=True):
+        key = author.upper()
+        if head == key:
+            return AUTHOR_DISPLAY.get(author, author.title())
+    return ""
+
+
+def build_lesson_segments(
+    *,
+    title: str,
+    philosopher: str,
+    quote_text: str,
+    reflection: str,
+) -> list[Segment]:
+    """Monta o roteiro narrativo em segments (todos type=text).
+
+    Ordem:
+      1) introdução com filósofo
+      2) título (forma falada)
+      3) quote.text integral
+      4) transição para comentários
+      5+) comentários originais (blocos da reflexão), na ordem
+    """
+    comments = reflection_blocks(reflection)
+    chunks: list[str] = []
+
+    phil = philosopher.strip()
+    if phil:
+        chunks.append(f"A lição deste momento é uma citação de {phil}.")
+
+    spoken_title = title_for_narration(title)
+    if spoken_title:
+        chunks.append(f"A lição se chama: {spoken_title}.")
+
+    qt = quote_text.strip()
+    if qt:
+        chunks.append(qt)
+
+    chunks.append(NARRATION_TRANSITION)
+    chunks.extend(comments)
+
     return [
         Segment(id=i, type="text", text=chunk)
-        for i, chunk in enumerate(reflection_blocks(reflection), start=1)
+        for i, chunk in enumerate(chunks, start=1)
     ]
 
 
 def segment_text(text: str) -> list[Segment]:
-    """Compatibilidade: segmenta reflexão como type=text."""
-    return build_lesson_segments(text)
+    """Compatibilidade: segmenta apenas a reflexão como type=text."""
+    return [
+        Segment(id=i, type="text", text=chunk)
+        for i, chunk in enumerate(reflection_blocks(text), start=1)
+    ]
 
 
 def parse_block(block: RawLessonBlock) -> Lesson:
     """Converte um bloco bruto em Lesson estruturada."""
     warnings: list[str] = []
     errors: list[str] = []
+    lesson_id = block.day_of_year
 
     date_display = format_date_display(block.day, block.month, block.date_raw)
 
@@ -436,22 +518,40 @@ def parse_block(block: RawLessonBlock) -> Lesson:
     reflection, refl_warns = extract_reflection(block.body_lines, after_quote)
     warnings.extend(refl_warns)
 
+    philosopher = philosopher_from_source(source)
+
     if not title:
         errors.append("Título vazio.")
     if not quote_text:
-        errors.append("Citação (quote.text) vazia.")
+        errors.append(
+            f"Lição {lesson_id}: citação (quote.text) vazia ou ausente."
+        )
     if not source:
         errors.append("Fonte (quote.source) vazia.")
+    if not philosopher:
+        errors.append(
+            f"Lição {lesson_id}: filósofo (quote.philosopher) ausente "
+            "ou não identificado — não inventar o nome."
+        )
     if not reflection:
         errors.append("Texto da reflexão vazio.")
 
-    segments = build_lesson_segments(reflection)
+    segments = build_lesson_segments(
+        title=title,
+        philosopher=philosopher,
+        quote_text=quote_text,
+        reflection=reflection,
+    )
 
     return Lesson(
-        id=block.day_of_year,
+        id=lesson_id,
         date=date_display,
         title=title,
-        quote=Quote(text=quote_text, source=source),
+        quote=Quote(
+            text=quote_text,
+            source=source,
+            philosopher=philosopher,
+        ),
         text=reflection,
         segments=segments,
         warnings=warnings,

@@ -105,20 +105,24 @@ Formato de `lesson.json`:
   "title": "CONTROLE E ESCOLHA",
   "quote": {
     "text": "...",
-    "source": "EPICTETO, DISCURSOS, 2.5.4-5"
+    "source": "EPICTETO, DISCURSOS, 2.5.4-5",
+    "philosopher": "Epicteto"
   },
   "text": "...",
   "segments": [
-    { "id": 1, "type": "text", "text": "..." },
-    { "id": 2, "type": "text", "text": "..." }
+    { "id": 1, "type": "text", "text": "A lição deste momento é uma citação de Epicteto." },
+    { "id": 2, "type": "text", "text": "A lição se chama: Controle e escolha." },
+    { "id": 3, "type": "text", "text": "..." },
+    { "id": 4, "type": "text", "text": "Agora vamos para os comentários desta citação." },
+    { "id": 5, "type": "text", "text": "..." }
   ]
 }
 ```
 
-`segments` representam apenas os blocos/parágrafos da **reflexão** (`type: "text"`).
-A citação existe somente em `quote.text` / `quote.source` (não é duplicada nos segments).
+`segments` é o **roteiro linear** narrado pelo sistema de áudio (sempre `type: "text"`):
+introdução → título → citação → transição → comentários da reflexão.
 
-Listas editoriais (`Rótulo — texto` ou itens numerados) ficam em um único segment, com `\n` entre itens.
+Listas editoriais (`Rótulo — texto` ou itens numerados) ficam em um único segment de comentário, com `\n` entre itens.
 
 ## Testes automatizados
 

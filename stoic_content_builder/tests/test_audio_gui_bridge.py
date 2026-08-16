@@ -45,10 +45,13 @@ class TestJsonToLesson(unittest.TestCase):
     def test_narrative_from_reflection_segments(self) -> None:
         lesson = load_lesson(self.path_007)
         narrative = build_narrative_from_segments(lesson["segments"])
-        # Segments atuais = reflexão; citação fica em quote.*
+        # Roteiro completo: intro + título + citação + transição + comentários
+        self.assertIn("citação de", narrative)
+        self.assertIn("A lição se chama:", narrative)
+        self.assertIn("Agora vamos para os comentários", narrative)
         self.assertIn("Vamos decompor", narrative)
-        self.assertNotIn("EPICTETO", narrative)
-        self.assertIn("EPICTETO", lesson["quote"]["source"])
+        self.assertIn("philosopher", lesson["quote"])
+        self.assertNotIn(lesson["quote"]["source"], narrative)
 
     def test_peek_label(self) -> None:
         label = peek_json_label(self.path_001)

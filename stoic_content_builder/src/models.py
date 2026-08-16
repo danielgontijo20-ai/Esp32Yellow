@@ -12,21 +12,25 @@ class Quote:
 
     text: str = ""
     source: str = ""
+    philosopher: str = ""
 
     def to_dict(self) -> dict[str, str]:
-        return {"text": self.text, "source": self.source}
+        return {
+            "text": self.text,
+            "source": self.source,
+            "philosopher": self.philosopher,
+        }
 
 
-# Segments representam apenas blocos da reflexão
+# Segments = roteiro linear de narração (sempre type=text)
 SEGMENT_TYPES = ("text",)
 
 
 @dataclass
 class Segment:
-    """Segmento = parágrafo/bloco lógico da reflexão.
+    """Segmento do roteiro narrativo (type=text).
 
-    type:
-      - text → bloco da reflexão (único tipo permitido)
+    Ordem típica: intro → título → citação → transição → comentários.
     """
 
     id: int

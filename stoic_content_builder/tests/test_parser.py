@@ -136,10 +136,25 @@ class TestParserSample(unittest.TestCase):
             self.assertNotIn("quote", types)
             self.assertNotIn("source", types)
 
-    def test_quote_not_duplicated_in_segments(self) -> None:
+    def test_narrative_prefix_on_segments(self) -> None:
+        for lesson in self.lessons:
+            segs = lesson.segments
+            self.assertGreaterEqual(len(segs), 5, lesson.date)
+            self.assertTrue(
+                segs[0].text.startswith("A lição deste momento é uma citação de ")
+            )
+            self.assertTrue(segs[1].text.startswith("A lição se chama: "))
+            self.assertEqual(segs[2].text, lesson.quote.text)
+            self.assertEqual(
+                segs[3].text, "Agora vamos para os comentários desta citação."
+            )
+            self.assertEqual(lesson.quote.philosopher, segs[0].text[len(
+                "A lição deste momento é uma citação de "
+            ):].rstrip("."))
+
+    def test_source_not_in_segments(self) -> None:
         for lesson in self.lessons:
             blob = "\n".join(s.text for s in lesson.segments)
-            # Fonte tipicamente só em quote.source
             self.assertNotIn(lesson.quote.source, blob)
 
     def test_list_items_not_merged_in_segments(self) -> None:
@@ -149,7 +164,6 @@ class TestParserSample(unittest.TestCase):
         self.assertIn("1. Observe seus juízos.", joined)
         self.assertIn("2. Distinga o que depende de você.", joined)
         self.assertIn("3. Aja com justiça e coragem.", joined)
-        # Itens no mesmo segment com \n — nunca colados com espaço
         for seg in lesson7.segments:
             if "1. Observe" in seg.text and "2. Distinga" in seg.text:
                 self.assertIn("\n", seg.text)
@@ -194,12 +208,35 @@ class TestEstoico110(unittest.TestCase):
         )
         types = [s.type for s in lesson3.segments]
         self.assertTrue(all(t == "text" for t in types))
-        # Quebras OCR de prosa devem virar espaço (não \n artificial)
-        for seg in lesson3.segments:
+        self.assertEqual(lesson3.segments[0].id, 1)
+        self.assertIn("Sêneca", lesson3.segments[0].text)
+        # Comentários (após transição): prosa sem quebra OCR residual
+        comments = lesson3.segments[4:]
+        for seg in comments:
             self.assertFalse(seg.text.endswith("\n"))
-            # Prosa contínua: sem quebra de linha OCR residual
             if "—" not in seg.text and not re_listish(seg.text):
                 self.assertNotIn("\n", seg.text)
+
+    def test_lesson5_narrative_seneca(self) -> None:
+        lesson5 = self.lessons[4]
+        self.assertEqual(lesson5.id, 5)
+        self.assertEqual(lesson5.title, "TORNE SUAS INTENÇÕES CLARAS")
+        self.assertEqual(lesson5.quote.philosopher, "Sêneca")
+        self.assertEqual(
+            lesson5.segments[0].text,
+            "A lição deste momento é uma citação de Sêneca.",
+        )
+        self.assertEqual(
+            lesson5.segments[1].text,
+            "A lição se chama: Torne suas intenções claras.",
+        )
+        self.assertEqual(lesson5.segments[2].text, lesson5.quote.text)
+        self.assertEqual(
+            lesson5.segments[3].text,
+            "Agora vamos para os comentários desta citação.",
+        )
+        # title original permanece em maiúsculas
+        self.assertEqual(lesson5.title, "TORNE SUAS INTENÇÕES CLARAS")
 
     def test_lesson7_emdash_list_one_block(self) -> None:
         lesson7 = self.lessons[6]
@@ -225,10 +262,8 @@ class TestEstoico110(unittest.TestCase):
         assert list_seg is not None
         for label in labels:
             self.assertIn(label, list_seg.text)
-        # Um único segment com a lista completa; itens separados por \n
         self.assertIn("\n", list_seg.text)
         self.assertNotIn("corretamente Recusa", list_seg.text)
-        # Não fragmentar a lista por limite de caracteres
         list_hits = sum(1 for s in text_segs if "Escolha —" in s.text)
         self.assertEqual(list_hits, 1)
 
@@ -237,8 +272,8 @@ class TestEstoico110(unittest.TestCase):
         self.assertEqual(lesson9.id, 9)
         self.assertTrue(lesson9.segments)
         self.assertTrue(all(s.type == "text" for s in lesson9.segments))
-        self.assertNotIn("quote", [s.type for s in lesson9.segments])
-        self.assertIn("EPICTETO", lesson9.quote.source)
+        self.assertEqual(lesson9.quote.philosopher, "Epicteto")
+        self.assertIn("Epicteto", lesson9.segments[0].text)
         blob = "\n".join(s.text for s in lesson9.segments)
         self.assertNotIn(lesson9.quote.source, blob)
 
@@ -248,11 +283,11 @@ class TestEstoico110(unittest.TestCase):
             "Deus, concedei-me a serenidade para aceitar as coisas que não posso mudar, "
             "a coragem para mudar as coisas que posso e a sabedoria para distingui-las."
         )
-        # Prece fica na citação (campo quote), não nos segments da reflexão
         flat_quote = lesson1.quote.text.replace("\n", " ")
         if "concedei-me a serenidade" in flat_quote:
             self.assertIn(prayer, flat_quote)
-        # Reflexão nos segments sem type quote
+        # Citação também aparece no segment 3 do roteiro
+        self.assertEqual(lesson1.segments[2].text, lesson1.quote.text)
         self.assertTrue(all(s.type == "text" for s in lesson1.segments))
 
 
@@ -316,10 +351,20 @@ class TestBuilderIntegration(unittest.TestCase):
                 self.assertTrue(data["segments"])
                 self.assertIn("text", data["quote"])
                 self.assertIn("source", data["quote"])
+                self.assertIn("philosopher", data["quote"])
                 for seg in data["segments"]:
                     self.assertEqual(seg["type"], "text")
                     self.assertIn("text", seg)
                     self.assertIn("id", seg)
+                self.assertTrue(
+                    data["segments"][0]["text"].startswith(
+                        "A lição deste momento é uma citação de "
+                    )
+                )
+                self.assertEqual(
+                    data["segments"][3]["text"],
+                    "Agora vamos para os comentários desta citação.",
+                )
                 # Sem campos de áudio nesta versão
                 self.assertNotIn("audio_file", data)
                 self.assertNotIn("start", data)

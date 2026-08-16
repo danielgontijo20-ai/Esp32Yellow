@@ -6,20 +6,27 @@ import re
 from collections import Counter
 
 from .models import Lesson, ParseReport, ValidationIssue
-from .parser import DAYS_IN_MONTH_LEAP, MONTHS, date_to_day_of_year, format_date_display
+from .parser import (
+    DAYS_IN_MONTH_LEAP,
+    MONTHS,
+    NARRATION_TRANSITION,
+    date_to_day_of_year,
+    format_date_display,
+    reflection_blocks,
+    title_for_narration,
+)
 
 
 def _normalize_content(text: str) -> str:
-    """Normaliza espaços/quebras para comparação segments ↔ text."""
+    """Normaliza espaços/quebras para comparação de conteúdo."""
     return re.sub(r"\s+", " ", text.replace("\n", " ")).strip()
 
 
 def validate_lesson(lesson: Lesson) -> list[ValidationIssue]:
-    """Valida campos obrigatórios e regras de segments de uma lição."""
+    """Valida campos obrigatórios e o roteiro narrativo em segments."""
     issues: list[ValidationIssue] = []
     lid = lesson.id
 
-    # 1) Campos obrigatórios da lição
     if lesson.id < 1 or lesson.id > 366:
         issues.append(
             ValidationIssue("error", lid, f"ID fora do intervalo 1–366: {lesson.id}")
@@ -31,33 +38,43 @@ def validate_lesson(lesson: Lesson) -> list[ValidationIssue]:
     if not lesson.title or not lesson.title.strip():
         issues.append(ValidationIssue("error", lid, "Campo 'title' vazio."))
 
-    # 2) quote.text / quote.source
     if not lesson.quote.text or not lesson.quote.text.strip():
-        issues.append(ValidationIssue("error", lid, "Campo 'quote.text' vazio."))
+        issues.append(
+            ValidationIssue(
+                "error",
+                lid,
+                f"Lição {lid}: campo 'quote.text' vazio ou ausente.",
+            )
+        )
 
     if not lesson.quote.source or not lesson.quote.source.strip():
         issues.append(ValidationIssue("error", lid, "Campo 'quote.source' vazio."))
+
+    if not lesson.quote.philosopher or not lesson.quote.philosopher.strip():
+        issues.append(
+            ValidationIssue(
+                "error",
+                lid,
+                f"Lição {lid}: campo 'quote.philosopher' ausente ou vazio.",
+            )
+        )
 
     if not lesson.text or not lesson.text.strip():
         issues.append(ValidationIssue("error", lid, "Campo 'text' vazio."))
 
     if not lesson.segments:
-        issues.append(
-            ValidationIssue("error", lid, "Campo 'segments' vazio.")
-        )
+        issues.append(ValidationIssue("error", lid, "Campo 'segments' vazio."))
     else:
         for seg in lesson.segments:
-            # 3) Proibido type quote/source nos segments
             if seg.type in ("quote", "source"):
                 issues.append(
                     ValidationIssue(
                         "error",
                         lid,
                         f"Segmento {seg.id} com type={seg.type!r}; "
-                        "citação deve existir só em quote.",
+                        "use apenas type='text' no roteiro.",
                     )
                 )
-            # 4) Todo segment: id, type=text, text
             elif seg.type != "text":
                 issues.append(
                     ValidationIssue(
@@ -83,7 +100,6 @@ def validate_lesson(lesson: Lesson) -> list[ValidationIssue]:
                 )
                 continue
 
-            # 5) Não terminar no meio de uma palavra (hífen de OCR residual)
             if re.search(r"[A-Za-zÀ-ÖØ-öø-ÿ]-$", seg.text.rstrip()):
                 issues.append(
                     ValidationIssue(
@@ -94,7 +110,6 @@ def validate_lesson(lesson: Lesson) -> list[ValidationIssue]:
                     )
                 )
 
-            # 6) Não terminar com quebra artificial de OCR
             if seg.text.endswith("\n") or seg.text.endswith("\r"):
                 issues.append(
                     ValidationIssue(
@@ -105,27 +120,70 @@ def validate_lesson(lesson: Lesson) -> list[ValidationIssue]:
                     )
                 )
 
-        # 7) Conteúdo concatenado dos segments ≈ reflexão (normalizado)
-        if lesson.text.strip() and lesson.segments:
-            seg_blob = _normalize_content(
-                " ".join(s.text for s in lesson.segments if s.text)
+        # Roteiro: intro → título → citação → transição → comentários
+        segs = lesson.segments
+        phil = (lesson.quote.philosopher or "").strip()
+        qt = (lesson.quote.text or "").strip()
+        expected_prefix: list[str] = []
+        if phil:
+            expected_prefix.append(
+                f"A lição deste momento é uma citação de {phil}."
             )
-            text_blob = _normalize_content(lesson.text)
-            if seg_blob != text_blob:
+        if lesson.title.strip():
+            expected_prefix.append(
+                f"A lição se chama: {title_for_narration(lesson.title)}."
+            )
+        if qt:
+            expected_prefix.append(qt)
+        expected_prefix.append(NARRATION_TRANSITION)
+
+        if len(segs) < len(expected_prefix):
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    lid,
+                    "Roteiro de segments incompleto "
+                    "(faltam intro/título/citação/transição).",
+                )
+            )
+        else:
+            for i, expected in enumerate(expected_prefix):
+                actual = segs[i].text.strip()
+                if _normalize_content(actual) != _normalize_content(expected):
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            lid,
+                            f"Segmento {segs[i].id} fora da ordem/conteúdo "
+                            f"esperado do roteiro narrativo.",
+                        )
+                    )
+
+            comments = [s.text for s in segs[len(expected_prefix) :]]
+            expected_comments = reflection_blocks(lesson.text)
+            if [_normalize_content(c) for c in comments] != [
+                _normalize_content(c) for c in expected_comments
+            ]:
                 issues.append(
                     ValidationIssue(
                         "error",
                         lid,
-                        "Conteúdo dos segments não corresponde ao campo "
-                        "'text' (após normalizar espaços/quebras).",
+                        "Comentários nos segments não correspondem ao campo "
+                        "'text' (após a transição).",
                     )
                 )
 
-    # 8) text permanece disponível independentemente (já validado acima)
+            ids = [s.id for s in segs]
+            if ids != list(range(1, len(segs) + 1)):
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        lid,
+                        "IDs dos segments não estão sequenciais a partir de 1.",
+                    )
+                )
 
-    # Propaga avisos/erros do parser
     for w in lesson.warnings:
-        # Título multilinha por OCR não é erro
         issues.append(ValidationIssue("warning", lid, w))
     for e in lesson.errors:
         issues.append(ValidationIssue("error", lid, e))
@@ -158,12 +216,10 @@ def find_missing_dates(lessons: list[Lesson]) -> list[str]:
     min_id = min(ids_present)
     max_id = max(ids_present)
 
-    # Mapa inverso id -> data legível
     id_to_date: dict[int, str] = {}
     for month in MONTHS:
         for day in range(1, DAYS_IN_MONTH_LEAP[month] + 1):
             doy = date_to_day_of_year(day, month)
-            # Preferir "1°" apenas para o dia 1 (convenção do livro)
             original = f"{day}° de {month}" if day == 1 else f"{day} de {month}"
             id_to_date[doy] = format_date_display(day, month, original)
 
@@ -251,7 +307,6 @@ def validate_all(
     report.problem_lessons = len(problem_ids)
     report.valid_lessons = len(lessons) - report.problem_lessons
 
-    # Avisos de contagem esperada (366 no livro completo)
     if len(lessons) < 366:
         report.warnings.append(
             f"Livro completo espera 366 lições; encontradas {len(lessons)}."
