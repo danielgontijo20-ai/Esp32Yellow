@@ -160,6 +160,15 @@ pip install -r requirements-audio.txt
 python generate_audio.py --mode test
 ```
 
+### Interface gráfica
+
+```bash
+python audio_gui.py
+```
+
+Selecione TXT em `input/lessons_txt/` (ex.: 001, 007, 010).  
+Saída padrão da GUI: `audio_test_gui/` (não sobrescreve `audio_test/`).
+
 ## Privacidade
 
 - Content Builder: 100% local, sem APIs
