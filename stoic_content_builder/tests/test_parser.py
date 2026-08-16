@@ -237,6 +237,25 @@ class TestEstoico110(unittest.TestCase):
         )
         # title original permanece em maiúsculas
         self.assertEqual(lesson5.title, "TORNE SUAS INTENÇÕES CLARAS")
+        # Conteúdo completo do livro (não a amostra curta)
+        self.assertIn("falsas concepções", lesson5.quote.text.lower())
+        self.assertGreater(len(lesson5.text), 200)
+
+    def test_lesson8_full_book_content(self) -> None:
+        lesson8 = self.lessons[7]
+        self.assertEqual(lesson8.id, 8)
+        self.assertEqual(lesson8.title, "PERCEBER NOSSOS VÍCIOS")
+        self.assertIn("74.12B-13", lesson8.quote.source)
+        self.assertIn("grandeza da alma", lesson8.quote.text.lower())
+        self.assertIn("cafezinho", lesson8.text.lower())
+        self.assertIn("Recuperemos essa liberdade", lesson8.text)
+        self.assertGreaterEqual(len(lesson8.segments), 7)
+        comments = "\n".join(s.text for s in lesson8.segments[4:])
+        self.assertIn("cafezinho", comments.lower())
+        self.assertNotEqual(
+            lesson8.text.strip(),
+            "Olhe para dentro. É ali que reside sua clareza e seu autocontrole.",
+        )
 
     def test_lesson7_emdash_list_one_block(self) -> None:
         lesson7 = self.lessons[6]
