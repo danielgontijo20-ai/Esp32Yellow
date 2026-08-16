@@ -1,4 +1,4 @@
-"""Testes da ponte TXT → áudio (sem Kokoro)."""
+"""Testes da ponte JSON → áudio (sem Kokoro)."""
 
 from __future__ import annotations
 
@@ -11,19 +11,29 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.audio.builder import (
-    load_lesson_from_txt,
-    peek_txt_label,
+    find_latest_build,
+    load_lesson,
+    peek_json_label,
     resolve_output_stem,
 )
 from src.audio.narrative import build_narrative_from_segments
 
 
-TXT_DIR = ROOT / "input" / "lessons_txt"
+def _lesson_json(lesson_id: int) -> Path:
+    build = find_latest_build(ROOT / "output")
+    return build / "lessons" / f"{lesson_id:03d}" / "lesson.json"
 
 
-class TestTxtToLesson(unittest.TestCase):
+class TestJsonToLesson(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.path_001 = _lesson_json(1)
+        cls.path_007 = _lesson_json(7)
+        if not cls.path_001.exists():
+            raise unittest.SkipTest("Nenhum build com lesson.json encontrado")
+
     def test_load_001(self) -> None:
-        lesson = load_lesson_from_txt(TXT_DIR / "001.txt")
+        lesson = load_lesson(self.path_001)
         self.assertEqual(lesson["id"], 1)
         self.assertIn("janeiro", lesson["date"])
         self.assertTrue(lesson["segments"])
@@ -33,20 +43,19 @@ class TestTxtToLesson(unittest.TestCase):
         self.assertIn("text", types)
 
     def test_narrative_order(self) -> None:
-        lesson = load_lesson_from_txt(TXT_DIR / "007.txt")
+        lesson = load_lesson(self.path_007)
         narrative = build_narrative_from_segments(lesson["segments"])
         self.assertIn("EPICTETO", narrative)
-        # não inclui título
         self.assertNotIn("AS SETE FUNÇÕES", narrative.split("EPICTETO")[0])
 
     def test_peek_label(self) -> None:
-        label = peek_txt_label(TXT_DIR / "010.txt")
-        self.assertIn("010.txt", label)
+        label = peek_json_label(self.path_001)
+        self.assertIn("lesson.json", label)
         self.assertIn("janeiro", label)
 
-    def test_output_stem_from_filename(self) -> None:
-        lesson = load_lesson_from_txt(TXT_DIR / "007.txt")
-        self.assertEqual(resolve_output_stem(TXT_DIR / "007.txt", lesson), "007")
+    def test_output_stem_from_parent_folder(self) -> None:
+        lesson = load_lesson(self.path_007)
+        self.assertEqual(resolve_output_stem(self.path_007, lesson), "007")
 
 
 if __name__ == "__main__":

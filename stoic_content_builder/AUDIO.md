@@ -108,7 +108,8 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 python audio_gui.py
 ```
 
-1. Clique em **Selecionar arquivos** e escolha um ou mais `.txt` (ex.: `input/lessons_txt/001.txt`)
+1. Clique em **Selecionar arquivos** e escolha um ou mais `lesson.json`
+   (ex.: `output/build_.../lessons/001/lesson.json`)
 2. Escolha a **Voz** (`pf_dora` / `pm_alex`)
 3. Pasta de destino padrão: `audio_test_gui/`
 4. Clique em **GERAR ÁUDIOS**

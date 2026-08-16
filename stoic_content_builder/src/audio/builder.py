@@ -166,23 +166,44 @@ def peek_txt_label(path: Path) -> str:
         return f"{path.name} — (erro ao ler: {exc})"
 
 
-def resolve_output_stem(txt_path: Path, lesson: dict) -> str:
-    """Nome base do áudio: preferir 001 do arquivo; senão id da lição."""
-    stem = Path(txt_path).stem.strip()
+def peek_json_label(path: Path) -> str:
+    """Rótulo amigável: '001/lesson.json — data — título'."""
+    path = Path(path)
+    try:
+        lesson = load_lesson(path)
+        date = lesson.get("date") or "?"
+        title = lesson.get("title") or "?"
+        parent = path.parent.name
+        display = f"{parent}/{path.name}" if parent.isdigit() else path.name
+        return f"{display} — {date} — {title}"
+    except Exception as exc:  # noqa: BLE001
+        return f"{path.name} — (erro ao ler: {exc})"
+
+
+def resolve_output_stem(source_path: Path, lesson: dict) -> str:
+    """Nome base do áudio: pasta 001/, arquivo 001.json, ou id da lição."""
+    path = Path(source_path)
+    stem = path.stem.strip()
+    parent = path.parent.name.strip()
+
+    if parent.isdigit():
+        return f"{int(parent):03d}"
     if stem.isdigit():
         return f"{int(stem):03d}"
+    if stem.lower() == "lesson" and parent.isdigit():
+        return f"{int(parent):03d}"
     return f"{int(lesson['id']):03d}"
 
 
-def run_audio_from_txt_files(
-    txt_paths: list[Path],
+def run_audio_from_json_files(
+    json_paths: list[Path],
     output_dir: Path,
     *,
     voice: str | None = None,
     log_callback=None,
     progress_callback=None,
 ) -> AudioReport:
-    """Gera áudios a partir de uma lista de TXT (usado pela GUI e testes).
+    """Gera áudios a partir de lesson.json (usado pela GUI).
 
     Reutiliza generate_lesson_audio / KokoroEngine.
     Não sobrescreve arquivos existentes — a GUI deve filtrar antes.
@@ -198,7 +219,108 @@ def run_audio_from_txt_files(
         if progress_callback:
             progress_callback(current, total, message)
 
-    # Aplica voz sem alterar o default permanente do módulo se None
+    previous_voice = config.VOICE
+    if voice:
+        config.VOICE = voice
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ext = config.OUTPUT_FORMAT.lower()
+    paths = [Path(p) for p in json_paths]
+
+    report = AudioReport(mode="gui")
+    started = time.perf_counter()
+    total = len(paths)
+
+    log("Iniciando geração...")
+    log(f"Voz: {config.VOICE} (lang={config.LANG_CODE})")
+    log(f"Formato: {ext} @ {config.SAMPLE_RATE} Hz")
+    log(f"Saída: {out_dir}")
+    if ext == "mp3" and not ffmpeg_available():
+        log("AVISO: ffmpeg não encontrado — fallback para WAV.")
+
+    try:
+        engine = KokoroEngine()
+        for index, json_path in enumerate(paths, start=1):
+            label = json_path.name
+            progress(index - 1, total, f"Gerando: {label}")
+            log(f"[{index}/{total}] {json_path}")
+
+            try:
+                lesson = load_lesson(json_path)
+                if "segments" not in lesson or not lesson.get("segments"):
+                    raise ValueError(
+                        f"JSON sem segments: {json_path.name}. "
+                        "Use um lesson.json gerado pelo Content Builder."
+                    )
+                stem = resolve_output_stem(json_path, lesson)
+                lesson = dict(lesson)
+                lesson["id"] = int(stem)
+                out_file = out_dir / f"{stem}.{ext}"
+
+                if out_file.exists():
+                    item = AudioItemResult(
+                        lesson_id=int(stem),
+                        filename=out_file.name,
+                        status="ERRO",
+                        error=f"Arquivo já existe (não sobrescrito): {out_file.name}",
+                    )
+                else:
+                    item = generate_lesson_audio(lesson, out_file, engine)
+
+                report.items.append(item)
+                if item.status == "OK":
+                    from .report import format_bytes, format_duration
+
+                    log(f"Áudio gerado: {item.filename}")
+                    log(f"Duração: {format_duration(item.duration_sec)}")
+                    log(f"Tamanho: {format_bytes(item.size_bytes)}")
+                    progress(index, total, f"Concluído: {item.filename}")
+                else:
+                    log(f"ERRO: {item.error}")
+                    progress(index, total, f"Erro: {label}")
+            except Exception as exc:  # noqa: BLE001
+                item = AudioItemResult(
+                    lesson_id=0,
+                    filename=json_path.name,
+                    status="ERRO",
+                    error=str(exc),
+                )
+                report.items.append(item)
+                log(f"ERRO: {exc}")
+                progress(index, total, f"Erro: {label}")
+    finally:
+        config.VOICE = previous_voice
+
+    report.elapsed_sec = time.perf_counter() - started
+    report_path = out_dir / "report.txt"
+    write_audio_report(report, report_path)
+    log("Processamento concluído.")
+    log(f"Relatório: {report_path}")
+    progress(total, total, "Concluído")
+    return report
+
+
+def run_audio_from_txt_files(
+    txt_paths: list[Path],
+    output_dir: Path,
+    *,
+    voice: str | None = None,
+    log_callback=None,
+    progress_callback=None,
+) -> AudioReport:
+    """Compatibilidade: gera áudio a partir de TXT (parser + Kokoro)."""
+
+    def log(msg: str) -> None:
+        if log_callback:
+            log_callback(msg)
+        else:
+            print(msg)
+
+    def progress(current: int, total: int, message: str) -> None:
+        if progress_callback:
+            progress_callback(current, total, message)
+
     previous_voice = config.VOICE
     if voice:
         config.VOICE = voice
@@ -208,11 +330,11 @@ def run_audio_from_txt_files(
     ext = config.OUTPUT_FORMAT.lower()
     paths = [Path(p) for p in txt_paths]
 
-    report = AudioReport(mode="gui")
+    report = AudioReport(mode="gui-txt")
     started = time.perf_counter()
     total = len(paths)
 
-    log("Iniciando geração...")
+    log("Iniciando geração (TXT)...")
     log(f"Voz: {config.VOICE} (lang={config.LANG_CODE})")
     log(f"Formato: {ext} @ {config.SAMPLE_RATE} Hz")
     log(f"Saída: {out_dir}")

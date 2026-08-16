@@ -166,7 +166,7 @@ python generate_audio.py --mode test
 python audio_gui.py
 ```
 
-Selecione TXT em `input/lessons_txt/` (ex.: 001, 007, 010).  
+Selecione `lesson.json` em `output/build_.../lessons/001/` (etc.).  
 Saída padrão da GUI: `audio_test_gui/` (não sobrescreve `audio_test/`).
 
 ## Privacidade

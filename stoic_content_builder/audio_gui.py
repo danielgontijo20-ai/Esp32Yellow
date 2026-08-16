@@ -23,10 +23,10 @@ if str(APP_DIR) not in sys.path:
 
 from src.audio import config
 from src.audio.builder import (
-    load_lesson_from_txt,
-    peek_txt_label,
+    load_lesson,
+    peek_json_label,
     resolve_output_stem,
-    run_audio_from_txt_files,
+    run_audio_from_json_files,
 )
 from src.audio.report import format_bytes, format_duration
 
@@ -74,7 +74,7 @@ class AudioGuiApp(tk.Tk):
         header.pack(anchor=tk.W, padx=10, pady=(10, 2))
 
         # Arquivos
-        files_frame = ttk.LabelFrame(self, text="Arquivos TXT", padding=8)
+        files_frame = ttk.LabelFrame(self, text="Arquivos JSON (lesson.json)", padding=8)
         files_frame.pack(fill=tk.BOTH, expand=True, **pad)
 
         btns = ttk.Frame(files_frame)
@@ -171,10 +171,19 @@ class AudioGuiApp(tk.Tk):
             cb.pack(anchor=tk.W, fill=tk.X, pady=1)
 
     def _select_files(self) -> None:
+        # Pasta inicial: build mais recente, se existir
+        initial = APP_DIR / "output"
+        builds = sorted(initial.glob("build_*")) if initial.exists() else []
+        if builds:
+            initial = builds[-1] / "lessons"
+
         paths = filedialog.askopenfilenames(
-            title="Selecionar arquivos TXT",
-            filetypes=[("Arquivos de texto", "*.txt"), ("Todos", "*.*")],
-            initialdir=str(APP_DIR / "input"),
+            title="Selecionar arquivos JSON (lesson.json)",
+            filetypes=[
+                ("JSON da lição", "*.json"),
+                ("Todos", "*.*"),
+            ],
+            initialdir=str(initial),
         )
         if not paths:
             return
@@ -183,7 +192,7 @@ class AudioGuiApp(tk.Tk):
             path = Path(p)
             if path.resolve() in existing:
                 continue
-            label = peek_txt_label(path)
+            label = peek_json_label(path)
             self.rows.append(FileRow(path, label, checked=True))
         self._refresh_list()
         self._append_log(f"Arquivos na lista: {len(self.rows)}")
@@ -256,7 +265,7 @@ class AudioGuiApp(tk.Tk):
         return result["value"]
 
     def _resolve_jobs(self, rows: list[FileRow], out_dir: Path) -> list[Path] | None:
-        """Pergunta sobre sobrescrita e devolve a lista final de TXT a processar."""
+        """Pergunta sobre sobrescrita e devolve a lista final de JSON a processar."""
         ext = config.OUTPUT_FORMAT.lower()
         apply_all: str | None = None  # overwrite | skip
         selected: list[Path] = []
@@ -267,10 +276,12 @@ class AudioGuiApp(tk.Tk):
                 messagebox.showerror("Erro", f"Arquivo não encontrado:\n{path}")
                 return None
             try:
-                lesson = load_lesson_from_txt(path)
+                lesson = load_lesson(path)
+                if not lesson.get("segments"):
+                    raise ValueError("JSON sem campo segments")
             except Exception as exc:  # noqa: BLE001
                 messagebox.showerror(
-                    "TXT inválido",
+                    "JSON inválido",
                     f"Não foi possível ler {path.name}:\n{exc}",
                 )
                 return None
@@ -314,7 +325,7 @@ class AudioGuiApp(tk.Tk):
         if not rows:
             messagebox.showwarning(
                 "Nenhum arquivo",
-                "Selecione pelo menos um arquivo TXT marcado na lista.",
+                "Selecione pelo menos um arquivo JSON marcado na lista.",
             )
             return
 
@@ -348,7 +359,7 @@ class AudioGuiApp(tk.Tk):
                 self._queue.put(("progress", current, total, message))
 
             try:
-                report = run_audio_from_txt_files(
+                report = run_audio_from_json_files(
                     jobs,
                     out_dir,
                     voice=voice,
