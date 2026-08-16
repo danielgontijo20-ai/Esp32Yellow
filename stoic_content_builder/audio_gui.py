@@ -415,6 +415,25 @@ class AudioGuiApp(tk.Tk):
 
 
 def main() -> None:
+    missing: list[str] = []
+    for mod in ("soundfile", "numpy", "kokoro"):
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(mod)
+    if missing:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Dependências ausentes",
+            "Faltam pacotes no Python atual:\n\n"
+            + "\n".join(f"- {m}" for m in missing)
+            + "\n\nAtive o venv e instale:\n"
+            ".venv\\Scripts\\activate\n"
+            "pip install -r requirements-audio.txt",
+        )
+        raise SystemExit(1)
+
     app = AudioGuiApp()
     app.mainloop()
 
