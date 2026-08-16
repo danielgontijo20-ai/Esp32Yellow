@@ -1,0 +1,23 @@
+# Builds gerados (nunca versionar)
+stoic_content_builder/output/build_*/
+
+# Áudio gerado / temporários
+stoic_content_builder/audio_test/
+stoic_content_builder/audio_test_gui/
+stoic_content_builder/audio/
+stoic_content_builder/audio_temp/
+*.mp3
+*.wav
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
