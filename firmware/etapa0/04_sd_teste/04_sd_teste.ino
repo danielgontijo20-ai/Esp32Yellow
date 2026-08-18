@@ -15,6 +15,7 @@
 #define SD_CS 5
 
 TFT_eSPI tft = TFT_eSPI();
+SPIClass sdSPI = SPIClass(VSPI);
 
 void drawStatus(const char *msg, uint16_t color) {
   tft.fillScreen(TFT_BLACK);
@@ -35,7 +36,6 @@ void setup() {
   drawStatus("Iniciando SD...", TFT_YELLOW);
 
   // SD na VSPI padrão da CYD
-  SPIClass sdSPI = SPIClass(VSPI);
   sdSPI.begin(18, 19, 23, SD_CS);
 
   if (!SD.begin(SD_CS, sdSPI)) {
