@@ -17,7 +17,7 @@ class AudioOutputRing : public AudioOutput {
   bool paused = false;
 
   bool begin() override { return true; }
-  bool Stop() override { return true; }
+  bool stop() override { return true; }
 
   bool ConsumeSample(int16_t sample[2]) override {
     if (paused) return true;
