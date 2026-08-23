@@ -1,14 +1,13 @@
 /*
- * Etapa 0.3b — Calibração do touch por 4 cantos
+ * Etapa 0.3b — Calibração do touch por 4 cantos (versão estável)
  * Placa: ESP32-2432S028R
  *
- * Como usar:
- * 1) Toque exatamente no canto indicado (alvo amarelo)
- * 2) Repita nos 4 cantos
- * 3) Depois teste: o ponto deve aparecer sob o dedo
+ * Regras anti-falso-toque:
+ * - precisa pressionar o alvo por ~0,4s
+ * - precisa SOLTAR o dedo antes do próximo canto
+ * - espera 1s entre cantos
  *
- * Se houver microSD FAT32, salva em /system/touch.cal
- * (usado pela Etapa 1).
+ * Com SD FAT32, salva em /system/touch.cal
  */
 
 #include <SPI.h>
@@ -21,8 +20,12 @@
 #define XPT2046_MISO 39
 #define XPT2046_CLK  25
 #define XPT2046_CS   33
-
 #define SD_CS 5
+
+// Pressão mínima (z) — aumente se ainda "clicar sozinho"
+#define MIN_PRESSURE 400
+#define HOLD_MS 400
+#define GAP_MS 1000
 
 TFT_eSPI tft = TFT_eSPI();
 SPIClass sharedSPI = SPIClass(VSPI);
@@ -34,29 +37,55 @@ struct Corner {
   int16_t screenY;
   int16_t rawX;
   int16_t rawY;
-  bool done;
 };
 
 Corner corners[4] = {
-  {"Canto SUPERIOR ESQUERDO", 20, 20, 0, 0, false},
-  {"Canto SUPERIOR DIREITO", 0, 20, 0, 0, false},
-  {"Canto INFERIOR ESQUERDO", 20, 0, 0, 0, false},
-  {"Canto INFERIOR DIREITO", 0, 0, 0, 0, false},
+  {"1/4 SUPERIOR ESQUERDO", 20, 20, 0, 0},
+  {"2/4 SUPERIOR DIREITO", 0, 20, 0, 0},
+  {"3/4 INFERIOR ESQUERDO", 20, 0, 0, 0},
+  {"4/4 INFERIOR DIREITO", 0, 0, 0, 0},
 };
 
 int step = 0;
 bool calibrated = false;
-unsigned long lastTouchMs = 0;
+bool waitingRelease = false;
 bool sdOk = false;
+unsigned long pressStartMs = 0;
+unsigned long readyAtMs = 0;
+long accX = 0, accY = 0;
+int accN = 0;
 
-int16_t mapFloat(int16_t v, float inMin, float inMax, float outMin, float outMax) {
-  float t = (float)(v - inMin) / (inMax - inMin);
-  return (int16_t)(outMin + t * (outMax - outMin));
+void drawPrompt() {
+  tft.fillScreen(TFT_BLACK);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.drawString("Calibracao do touch", 10, 8, 2);
+
+  tft.setTextColor(TFT_CYAN, TFT_BLACK);
+  tft.drawString(corners[step].name, 10, 36, 2);
+
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK);
+  tft.drawString("Pressione o alvo e SEGURE", 10, 64, 2);
+  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+  tft.drawString("Depois SOLTE o dedo", 10, 88, 2);
+
+  if (waitingRelease) {
+    tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+    tft.drawString("Solte o dedo para continuar...", 10, 120, 2);
+  }
+
+  int16_t ax = corners[step].screenX;
+  int16_t ay = corners[step].screenY;
+  tft.drawLine(ax - 14, ay, ax + 14, ay, TFT_YELLOW);
+  tft.drawLine(ax, ay - 14, ax, ay + 14, TFT_YELLOW);
+  tft.fillCircle(ax, ay, 5, TFT_YELLOW);
 }
 
 bool saveCalibrationToSd() {
   if (!sdOk) return false;
   if (!SD.exists("/system")) SD.mkdir("/system");
+  // remove antigo
+  if (SD.exists("/system/touch.cal")) SD.remove("/system/touch.cal");
   File f = SD.open("/system/touch.cal", FILE_WRITE);
   if (!f) return false;
   for (int i = 0; i < 4; i++) {
@@ -66,23 +95,6 @@ bool saveCalibrationToSd() {
   return true;
 }
 
-void drawPrompt() {
-  tft.fillScreen(TFT_BLACK);
-  tft.setTextDatum(TL_DATUM);
-  tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("Calibracao do touch", 10, 8, 2);
-  tft.setTextColor(TFT_CYAN, TFT_BLACK);
-  tft.drawString(corners[step].name, 10, 40, 2);
-  tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-  tft.drawString("Toque no alvo amarelo", 10, 70, 2);
-
-  int16_t ax = corners[step].screenX;
-  int16_t ay = corners[step].screenY;
-  tft.drawLine(ax - 12, ay, ax + 12, ay, TFT_YELLOW);
-  tft.drawLine(ax, ay - 12, ax, ay + 12, TFT_YELLOW);
-  tft.fillCircle(ax, ay, 4, TFT_YELLOW);
-}
-
 void finishCalibration() {
   calibrated = true;
   bool saved = saveCalibrationToSd();
@@ -90,43 +102,30 @@ void finishCalibration() {
   tft.fillScreen(TFT_BLACK);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
-  tft.drawString("Calibrado!", 10, 10, 2);
+  tft.drawString("Calibrado!", 10, 10, 4);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
-  tft.drawString("Toque para testar", 10, 40, 2);
+  tft.drawString("Toque para testar os pontos", 10, 55, 2);
   tft.setTextColor(saved ? TFT_GREEN : TFT_YELLOW, TFT_BLACK);
-  tft.drawString(saved ? "Salvo: /system/touch.cal" : "SD ausente (nao salvou)", 10, 70, 2);
+  tft.drawString(saved ? "Salvo: /system/touch.cal" : "SD ausente (nao salvou)", 10, 90, 2);
 
   Serial.println("==== CALIBRACAO ====");
   for (int i = 0; i < 4; i++) {
-    Serial.printf("%s -> raw(%d,%d) screen(%d,%d)\n",
-                  corners[i].name, corners[i].rawX, corners[i].rawY,
-                  corners[i].screenX, corners[i].screenY);
+    Serial.printf("%d raw=(%d,%d)\n", i + 1, corners[i].rawX, corners[i].rawY);
   }
-  Serial.println(saved ? "Salvo em /system/touch.cal" : "Nao salvou no SD");
-  Serial.println("====================");
+  Serial.println(saved ? "Salvo /system/touch.cal" : "Nao salvou SD");
 }
 
-bool readStableTouch(int16_t &rx, int16_t &ry) {
+bool touchedNow(TS_Point &p) {
   if (!(touch.tirqTouched() && touch.touched())) return false;
-  if (millis() - lastTouchMs < 400) return false;
-
-  long sx = 0, sy = 0;
-  int n = 0;
-  for (int i = 0; i < 16; i++) {
-    if (touch.touched()) {
-      TS_Point p = touch.getPoint();
-      sx += p.x;
-      sy += p.y;
-      n++;
-    }
-    delay(5);
-  }
-  if (n < 8) return false;
-
-  rx = sx / n;
-  ry = sy / n;
-  lastTouchMs = millis();
+  p = touch.getPoint();
+  if (p.z < MIN_PRESSURE) return false;
   return true;
+}
+
+int16_t mapFloat(int16_t v, float inMin, float inMax, float outMin, float outMax) {
+  if (inMax == inMin) return (int16_t)outMin;
+  float t = (float)(v - inMin) / (inMax - inMin);
+  return (int16_t)(outMin + t * (outMax - outMin));
 }
 
 void mapCalibrated(int16_t rx, int16_t ry, int16_t &x, int16_t &y) {
@@ -134,10 +133,8 @@ void mapCalibrated(int16_t rx, int16_t ry, int16_t &x, int16_t &y) {
   float xMax = (corners[1].rawX + corners[3].rawX) / 2.0f;
   float yMin = (corners[0].rawY + corners[1].rawY) / 2.0f;
   float yMax = (corners[2].rawY + corners[3].rawY) / 2.0f;
-
   x = mapFloat(rx, xMin, xMax, 0, tft.width() - 1);
   y = mapFloat(ry, yMin, yMax, 0, tft.height() - 1);
-
   if (x < 0) x = 0;
   if (y < 0) y = 0;
   if (x >= tft.width()) x = tft.width() - 1;
@@ -146,7 +143,7 @@ void mapCalibrated(int16_t rx, int16_t ry, int16_t &x, int16_t &y) {
 
 void setup() {
   Serial.begin(115200);
-  delay(200);
+  delay(300);
 
   pinMode(21, OUTPUT);
   digitalWrite(21, HIGH);
@@ -163,33 +160,93 @@ void setup() {
   sdOk = SD.begin(SD_CS, sharedSPI);
   Serial.println(sdOk ? "SD OK" : "SD ausente");
 
+  // Se já existe calibração ruim, avisa
+  if (sdOk && SD.exists("/system/touch.cal")) {
+    Serial.println("AVISO: touch.cal antigo sera sobrescrito ao terminar");
+  }
+
   touch.begin(sharedSPI);
   touch.setRotation(1);
 
+  readyAtMs = millis() + 800;  // ignora toques nos primeiros 0,8s
   drawPrompt();
-  Serial.println("Inicie a calibracao tocando nos alvos.");
+  Serial.println("Calibracao pronta. Pressione e segure cada alvo.");
 }
 
 void loop() {
-  int16_t rx, ry;
-  if (!readStableTouch(rx, ry)) return;
+  TS_Point p;
 
-  if (!calibrated) {
-    corners[step].rawX = rx;
-    corners[step].rawY = ry;
-    corners[step].done = true;
-    Serial.printf("Ponto %d raw=(%d,%d)\n", step, rx, ry);
-    step++;
-    if (step >= 4) {
-      finishCalibration();
-    } else {
-      drawPrompt();
+  // Modo teste depois de calibrar
+  if (calibrated) {
+    if (touchedNow(p)) {
+      int16_t x, y;
+      mapCalibrated(p.x, p.y, x, y);
+      tft.fillCircle(x, y, 4, TFT_YELLOW);
+      delay(30);
     }
     return;
   }
 
-  int16_t x, y;
-  mapCalibrated(rx, ry, x, y);
-  tft.fillCircle(x, y, 4, TFT_YELLOW);
-  Serial.printf("test raw(%d,%d) -> px(%d,%d)\n", rx, ry, x, y);
+  if (millis() < readyAtMs) return;
+
+  // Precisa soltar entre um canto e outro
+  if (waitingRelease) {
+    if (!touchedNow(p)) {
+      waitingRelease = false;
+      pressStartMs = 0;
+      accX = accY = 0;
+      accN = 0;
+      readyAtMs = millis() + GAP_MS;
+      drawPrompt();
+      Serial.println("Dedo solto. Proximo canto...");
+    }
+    return;
+  }
+
+  if (touchedNow(p)) {
+    if (pressStartMs == 0) {
+      pressStartMs = millis();
+      accX = 0;
+      accY = 0;
+      accN = 0;
+    }
+    accX += p.x;
+    accY += p.y;
+    accN++;
+
+    // barra de progresso visual simples
+    unsigned long held = millis() - pressStartMs;
+    int bar = (int)(held * 200 / HOLD_MS);
+    if (bar > 200) bar = 200;
+    tft.fillRect(10, 150, 200, 12, TFT_DARKGREY);
+    tft.fillRect(10, 150, bar, 12, TFT_GREEN);
+
+    if (held >= HOLD_MS && accN >= 8) {
+      corners[step].rawX = accX / accN;
+      corners[step].rawY = accY / accN;
+      Serial.printf("Canto %d salvo raw=(%d,%d)\n",
+                    step + 1, corners[step].rawX, corners[step].rawY);
+
+      step++;
+      pressStartMs = 0;
+      accX = accY = 0;
+      accN = 0;
+
+      if (step >= 4) {
+        finishCalibration();
+      } else {
+        waitingRelease = true;
+        tft.setTextColor(TFT_ORANGE, TFT_BLACK);
+        tft.drawString("Solte o dedo...", 10, 180, 2);
+      }
+    }
+  } else {
+    // soltou cedo demais: reinicia contagem
+    if (pressStartMs != 0) {
+      pressStartMs = 0;
+      accX = accY = 0;
+      accN = 0;
+      tft.fillRect(10, 150, 200, 12, TFT_DARKGREY);
+    }
+  }
 }
