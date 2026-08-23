@@ -2,12 +2,9 @@
  * Etapa 0.3b — Calibração do touch por 4 cantos (versão estável)
  * Placa: ESP32-2432S028R
  *
- * Regras anti-falso-toque:
- * - precisa pressionar o alvo por ~0,4s
- * - precisa SOLTAR o dedo antes do próximo canto
- * - espera 1s entre cantos
- *
- * Com SD FAT32, salva em /system/touch.cal
+ * - Segure o alvo ~0,5s (barrinha verde)
+ * - Solte o dedo (ou espere 2s) para ir ao próximo canto
+ * - Salva /system/touch.cal no SD
  */
 
 #include <SPI.h>
@@ -22,10 +19,11 @@
 #define XPT2046_CS   33
 #define SD_CS 5
 
-// Pressão mínima (z) — aumente se ainda "clicar sozinho"
-#define MIN_PRESSURE 400
-#define HOLD_MS 400
-#define GAP_MS 1000
+#define MIN_PRESSURE 600
+#define HOLD_MS 500
+#define GAP_MS 700
+#define RELEASE_NEED 25          // leituras seguidas "solto"
+#define RELEASE_TIMEOUT_MS 2000  // se travar, avança sozinho
 
 TFT_eSPI tft = TFT_eSPI();
 SPIClass sharedSPI = SPIClass(VSPI);
@@ -52,10 +50,19 @@ bool waitingRelease = false;
 bool sdOk = false;
 unsigned long pressStartMs = 0;
 unsigned long readyAtMs = 0;
+unsigned long releaseWaitStartMs = 0;
+int releaseCount = 0;
 long accX = 0, accY = 0;
 int accN = 0;
 
-void drawPrompt() {
+bool isPressed(TS_Point &p) {
+  // Nao usar so tirqTouched — na CYD ele pode ficar "preso"
+  if (!touch.touched()) return false;
+  p = touch.getPoint();
+  return p.z >= MIN_PRESSURE;
+}
+
+void drawPrompt(const char *extra = nullptr) {
   tft.fillScreen(TFT_BLACK);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -69,9 +76,9 @@ void drawPrompt() {
   tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
   tft.drawString("Depois SOLTE o dedo", 10, 88, 2);
 
-  if (waitingRelease) {
+  if (extra) {
     tft.setTextColor(TFT_ORANGE, TFT_BLACK);
-    tft.drawString("Solte o dedo para continuar...", 10, 120, 2);
+    tft.drawString(extra, 10, 120, 2);
   }
 
   int16_t ax = corners[step].screenX;
@@ -84,7 +91,6 @@ void drawPrompt() {
 bool saveCalibrationToSd() {
   if (!sdOk) return false;
   if (!SD.exists("/system")) SD.mkdir("/system");
-  // remove antigo
   if (SD.exists("/system/touch.cal")) SD.remove("/system/touch.cal");
   File f = SD.open("/system/touch.cal", FILE_WRITE);
   if (!f) return false;
@@ -115,13 +121,6 @@ void finishCalibration() {
   Serial.println(saved ? "Salvo /system/touch.cal" : "Nao salvou SD");
 }
 
-bool touchedNow(TS_Point &p) {
-  if (!(touch.tirqTouched() && touch.touched())) return false;
-  p = touch.getPoint();
-  if (p.z < MIN_PRESSURE) return false;
-  return true;
-}
-
 int16_t mapFloat(int16_t v, float inMin, float inMax, float outMin, float outMax) {
   if (inMax == inMin) return (int16_t)outMin;
   float t = (float)(v - inMin) / (inMax - inMin);
@@ -139,6 +138,22 @@ void mapCalibrated(int16_t rx, int16_t ry, int16_t &x, int16_t &y) {
   if (y < 0) y = 0;
   if (x >= tft.width()) x = tft.width() - 1;
   if (y >= tft.height()) y = tft.height() - 1;
+}
+
+void goNextCornerOrFinish() {
+  step++;
+  pressStartMs = 0;
+  accX = accY = 0;
+  accN = 0;
+  releaseCount = 0;
+
+  if (step >= 4) {
+    finishCalibration();
+    return;
+  }
+  waitingRelease = true;
+  releaseWaitStartMs = millis();
+  drawPrompt("Solte o dedo (ou espere 2s)...");
 }
 
 void setup() {
@@ -160,25 +175,19 @@ void setup() {
   sdOk = SD.begin(SD_CS, sharedSPI);
   Serial.println(sdOk ? "SD OK" : "SD ausente");
 
-  // Se já existe calibração ruim, avisa
-  if (sdOk && SD.exists("/system/touch.cal")) {
-    Serial.println("AVISO: touch.cal antigo sera sobrescrito ao terminar");
-  }
-
   touch.begin(sharedSPI);
   touch.setRotation(1);
 
-  readyAtMs = millis() + 800;  // ignora toques nos primeiros 0,8s
+  readyAtMs = millis() + 1000;
   drawPrompt();
-  Serial.println("Calibracao pronta. Pressione e segure cada alvo.");
+  Serial.println("Calibracao pronta.");
 }
 
 void loop() {
   TS_Point p;
 
-  // Modo teste depois de calibrar
   if (calibrated) {
-    if (touchedNow(p)) {
+    if (isPressed(p)) {
       int16_t x, y;
       mapCalibrated(p.x, p.y, x, y);
       tft.fillCircle(x, y, 4, TFT_YELLOW);
@@ -189,21 +198,30 @@ void loop() {
 
   if (millis() < readyAtMs) return;
 
-  // Precisa soltar entre um canto e outro
+  // Esperando soltar entre cantos
   if (waitingRelease) {
-    if (!touchedNow(p)) {
+    bool down = isPressed(p);
+    if (!down) {
+      releaseCount++;
+    } else {
+      releaseCount = 0;
+    }
+
+    bool released = releaseCount >= RELEASE_NEED;
+    bool timedOut = (millis() - releaseWaitStartMs) >= RELEASE_TIMEOUT_MS;
+
+    if (released || timedOut) {
       waitingRelease = false;
-      pressStartMs = 0;
-      accX = accY = 0;
-      accN = 0;
+      releaseCount = 0;
       readyAtMs = millis() + GAP_MS;
-      drawPrompt();
-      Serial.println("Dedo solto. Proximo canto...");
+      drawPrompt(timedOut ? "Ok, proximo canto" : nullptr);
+      Serial.println(timedOut ? "Timeout soltar — seguindo" : "Dedo solto");
     }
     return;
   }
 
-  if (touchedNow(p)) {
+  // Captura do canto atual
+  if (isPressed(p)) {
     if (pressStartMs == 0) {
       pressStartMs = millis();
       accX = 0;
@@ -214,34 +232,19 @@ void loop() {
     accY += p.y;
     accN++;
 
-    // barra de progresso visual simples
     unsigned long held = millis() - pressStartMs;
     int bar = (int)(held * 200 / HOLD_MS);
     if (bar > 200) bar = 200;
     tft.fillRect(10, 150, 200, 12, TFT_DARKGREY);
     tft.fillRect(10, 150, bar, 12, TFT_GREEN);
 
-    if (held >= HOLD_MS && accN >= 8) {
+    if (held >= HOLD_MS && accN >= 10) {
       corners[step].rawX = accX / accN;
       corners[step].rawY = accY / accN;
-      Serial.printf("Canto %d salvo raw=(%d,%d)\n",
-                    step + 1, corners[step].rawX, corners[step].rawY);
-
-      step++;
-      pressStartMs = 0;
-      accX = accY = 0;
-      accN = 0;
-
-      if (step >= 4) {
-        finishCalibration();
-      } else {
-        waitingRelease = true;
-        tft.setTextColor(TFT_ORANGE, TFT_BLACK);
-        tft.drawString("Solte o dedo...", 10, 180, 2);
-      }
+      Serial.printf("Canto %d raw=(%d,%d)\n", step + 1, corners[step].rawX, corners[step].rawY);
+      goNextCornerOrFinish();
     }
   } else {
-    // soltou cedo demais: reinicia contagem
     if (pressStartMs != 0) {
       pressStartMs = 0;
       accX = accY = 0;
