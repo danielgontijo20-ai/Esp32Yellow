@@ -17,7 +17,6 @@
 #include <SPI.h>
 #include <SD.h>
 #include <FS.h>
-#include <Preferences.h>
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 #include <ArduinoJson.h>
