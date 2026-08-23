@@ -1,0 +1,48 @@
+{
+  "id": 7,
+  "date": "7 de janeiro",
+  "title": "AS SETE FUNÇÕES CLARAS DA MENTE",
+  "quote": {
+    "text": "O trabalho apropriado da mente é o exercício de escolha, recusa, anseio, repulsa, preparação, objetivo e consentimento. O que pode então comprometer e impedir o funcionamento apropriado da mente? Nada, senão as decisões deturpadas tomadas por ela própria.",
+    "source": "EPICTETO, DISCURSOS, 4.11.6-7",
+    "philosopher": "Epicteto"
+  },
+  "text": "Vamos decompor cada uma dessas tarefas:\n\nEscolha — fazer e pensar corretamente\nRecusa — da tentação\nAnseio — por ser melhor\nRepulsa — da negatividade, das más influências, do que não é verdade\nPreparação — para o que nos espera ou para o que quer que possa acontecer\nObjetivo — nosso princípio orientador e prioridade máxima\nConsentimento — estar livre de engano quanto ao que está dentro ou fora de nosso controle (e se sentir pronto para aceitar o último)\n\nÉ para isso que serve a nossa mente. Devemos nos assegurar de que é isso que ela faz — e ver tudo o mais como transtorno ou deturpação.",
+  "segments": [
+    {
+      "id": 1,
+      "type": "text",
+      "text": "A lição deste momento é uma citação de Epicteto."
+    },
+    {
+      "id": 2,
+      "type": "text",
+      "text": "A lição se chama: As sete funções claras da mente."
+    },
+    {
+      "id": 3,
+      "type": "text",
+      "text": "O trabalho apropriado da mente é o exercício de escolha, recusa, anseio, repulsa, preparação, objetivo e consentimento. O que pode então comprometer e impedir o funcionamento apropriado da mente? Nada, senão as decisões deturpadas tomadas por ela própria."
+    },
+    {
+      "id": 4,
+      "type": "text",
+      "text": "Agora vamos para os comentários desta citação."
+    },
+    {
+      "id": 5,
+      "type": "text",
+      "text": "Vamos decompor cada uma dessas tarefas:"
+    },
+    {
+      "id": 6,
+      "type": "text",
+      "text": "Escolha — fazer e pensar corretamente\nRecusa — da tentação\nAnseio — por ser melhor\nRepulsa — da negatividade, das más influências, do que não é verdade\nPreparação — para o que nos espera ou para o que quer que possa acontecer\nObjetivo — nosso princípio orientador e prioridade máxima\nConsentimento — estar livre de engano quanto ao que está dentro ou fora de nosso controle (e se sentir pronto para aceitar o último)"
+    },
+    {
+      "id": 7,
+      "type": "text",
+      "text": "É para isso que serve a nossa mente. Devemos nos assegurar de que é isso que ela faz — e ver tudo o mais como transtorno ou deturpação."
+    }
+  ]
+}
