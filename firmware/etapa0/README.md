@@ -4,171 +4,147 @@ Placa: **ESP32-2432S028R** (USB-C)
 Caixa: **JBL CINEMA SB110**  
 Objetivo: validar hardware **antes** do app Diário Estoico.
 
-Ordem dos testes:
+---
 
-1. Serial (placa responde)
-2. Tela
-3. Touch
-4. Cartão SD
-5. Bluetooth → JBL
+## Ordem dos testes
 
-Só avance para o próximo teste quando o atual passar.
+1. Serial  
+2. Tela (limpeza total)  
+3. Touch (calibração por cantos)  
+4. Cartão SD  
+5. Bluetooth → JBL  
+
+Só avance quando o atual passar.
 
 ---
 
 ## 0. Material
 
 - Placa Yellow USB-C
-- Cabo USB-C **de dados** (não só carga)
-- Cartão microSD FAT32 (pode estar vazio no teste 04)
+- Cabo USB-C **de dados**
+- Cartão microSD FAT32
 - Caixa **JBL CINEMA SB110**
 - PC com **Arduino IDE**
 
 ---
 
-## 1. Instalar suporte ESP32 no Arduino IDE
+## 1. Arduino IDE — placa ESP32
 
-1. Abra o Arduino IDE.
-2. **Arquivo → Preferências**.
-3. Em **URLs Adicionais para Gerenciadores de Placas**, cole:
+1. **Arquivo → Preferências**
+2. URL adicional:
 
 ```text
 https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
 ```
 
-4. **Ferramentas → Placa → Gerenciador de Placas**.
-5. Busque **esp32** (Espressif Systems) → **Instalar**.
+3. **Ferramentas → Placa → Gerenciador de Placas** → instalar **esp32** (Espressif)
 
-### Configuração da placa (use sempre isto)
-
-**Ferramentas:**
+### Configuração
 
 | Opção | Valor |
 |--------|--------|
 | Placa | **ESP32 Dev Module** |
 | Upload Speed | 921600 |
-| CPU Frequency | 240MHz |
-| Flash Frequency | 80MHz |
-| Flash Mode | QIO |
 | Flash Size | **4MB** |
 | Partition Scheme | **Huge APP (3MB No OTA/1MB SPIFFS)** |
-| PSRAM | Disabled |
-| Port | a porta COM da Yellow (Windows) |
-
-Se o upload falhar: segure o botão **BOOT** da placa, clique em Upload, solte o BOOT quando começar a gravar.
+| Port | COM da Yellow |
 
 ---
 
-## 2. Instalar bibliotecas
+## 2. Bibliotecas
 
-**Ferramentas → Gerenciar Bibliotecas** e instale:
+Instale pelo Gerenciador:
 
-1. **TFT_eSPI** (Bodmer)
-2. **XPT2046_Touchscreen** (Paul Stoffregen)
-3. **ESP32-A2DP** (Phil Schatzmann) — para o teste da JBL
+- **TFT_eSPI** (Bodmer)
+- **XPT2046_Touchscreen** (Paul Stoffregen)
 
----
+A **ESP32-A2DP** quase não aparece na busca. Instale por ZIP:
 
-## 3. Configurar TFT_eSPI (obrigatório)
+1. Baixe: https://github.com/pschatzmann/ESP32-A2DP/archive/refs/heads/main.zip  
+2. **Sketch → Incluir Biblioteca → Adicionar biblioteca .ZIP...**
 
-A biblioteca TFT_eSPI **não** detecta a Yellow sozinha. Você precisa editar o setup.
-
-1. No PC, abra a pasta das bibliotecas do Arduino, normalmente:
-
-```text
-Documentos\Arduino\libraries\TFT_eSPI\
-```
-
-2. Faça backup do arquivo `User_Setup.h` (copie e renomeie para `User_Setup.h.bak`).
-
-3. Abra `User_Setup.h` e **substitua o conteúdo** pelo arquivo:
-
-```text
-firmware/etapa0/TFT_eSPI_User_Setup_CYD.h
-```
-
-(deste repositório — copie o conteúdo inteiro para dentro de `User_Setup.h`).
-
-4. Salve.
-
-Se a tela ficar invertida/errada no teste 02, avise: às vezes a variante usa `ILI9341_2_DRIVER` em vez de `ILI9341_DRIVER`.
+**Não** instale a biblioteca **EspBle**.
 
 ---
 
-## 4. Como abrir e gravar cada teste
+## 3. Configurar a tela (muito importante)
 
-1. Abra o `.ino` da pasta do teste (ex.: `01_serial_teste/01_serial_teste.ino`).
-2. Confira placa/porta em **Ferramentas**.
-3. Clique em **Upload** (→).
-4. Abra o **Monitor Serial** em **115200 baud**.
+Existem **duas variantes** da Yellow. Se sobrar a faixa do demo antigo (`shop` / `CPU` / `FPS`), o driver está errado.
+
+### Passo A — tente primeiro ST7789 (comum em USB-C)
+
+1. Abra `firmware/etapa0/TFT_eSPI_User_Setup_CYD_ST7789.h`
+2. Copie **todo** o conteúdo
+3. Cole em `Documentos\Arduino\libraries\TFT_eSPI\User_Setup.h`
+4. Salve
+5. Grave o teste `02b_tela_limpeza`
+
+### Passo B — se ainda sobrar faixa, use ILI9341_2
+
+1. Abra `firmware/etapa0/TFT_eSPI_User_Setup_CYD_ILI9341_2.h`
+2. Substitua o `User_Setup.h` por esse conteúdo
+3. Grave de novo o `02b_tela_limpeza`
+
+### Sucesso da tela
+
+A tela inteira deve ficar vermelha → verde → azul → preta, com **4 cantos amarelos**, e **sem** a faixa do demo de fábrica.
 
 ---
 
-## 5. O que cada teste deve mostrar
+## 4. Testes
 
 ### 01 — Serial
-- Monitor Serial imprime `Yellow OK` a cada segundo.
-- Se não aparecer nada: cabo/porta/driver errado.
+Arquivo: `01_serial_teste`  
+Sucesso: Monitor Serial `115200` mostra `Yellow OK`
 
-### 02 — Tela
-- Tela preta com texto **DIARIO ESTOICO** e **Etapa 0 - Tela OK**.
-- Se ficar branca/preta sem texto: revise `User_Setup.h`.
+### 02b — Limpeza da tela
+Arquivo: `02b_tela_limpeza`  
+Sucesso: cores cheias sem resto do demo antigo
 
-### 03 — Touch
-- Toque na tela: aparece um ponto e coordenadas no Serial.
-- Se não reagir: confira se instalou `XPT2046_Touchscreen`.
+### 03b — Touch calibrado
+Arquivo: `03b_touch_calibracao`
+
+1. Toque no alvo de cada canto (4 vezes)
+2. Depois toque livremente: o ponto deve cair sob o dedo
+3. Guarde os valores impressos no Serial (vamos reutilizar no app)
 
 ### 04 — SD
-- Coloque um microSD FAT32 no slot **com a placa desligada**, depois ligue.
-- Tela/Serial mostram `SD OK` e listam arquivos da raiz.
-- Se falhar: formate FAT32, tente outro cartão (alguns SDXC grandes falham).
+Arquivo: `04_sd_teste`  
+Cartão FAT32, inserido com a placa desligada  
+Sucesso: `SD OK`
 
 ### 05 — Bluetooth JBL
-1. Desconecte a JBL do celular.
-2. Coloque a JBL em modo Bluetooth/pareamento.
-3. Grave o sketch 05.
-4. Na tela deve aparecer **Procurando JBL...** e depois **Conectado** (ou erro claro).
-
-Nome buscado no código: `JBL CINEMA SB110`.
-
-Se a barra anunciar outro nome no celular, anote o nome exato e me envie para ajustarmos o sketch.
+Arquivo: `05_bluetooth_jbl`  
+Desparee a JBL do celular e deixe em pareamento  
+Sucesso: `Conectado: JBL CINEMA SB110`
 
 ---
 
-## 6. Checklist (marque mentalmente)
+## Problemas comuns
 
-- [ ] 01 Serial OK  
-- [ ] 02 Tela OK  
-- [ ] 03 Touch OK  
-- [ ] 04 SD OK  
-- [ ] 05 JBL conectada OK  
-
-Quando os 5 estiverem OK, partimos para o firmware do Diário Estoico (Etapa 1).
-
----
-
-## 7. Problemas comuns
-
-| Problema | O que tentar |
-|----------|----------------|
-| Porta COM não aparece | Trocar cabo; instalar driver CP210x/CH340 |
-| Upload falha | Segurar BOOT; baixar Upload Speed para 115200 |
-| Tela sem imagem | Refazer `User_Setup.h`; conferir backlight |
-| Touch sem resposta | Biblioteca XPT2046; rotação do touch |
-| SD falha | FAT32; cartão ≤32GB costuma ser mais estável |
-| JBL não conecta | Desparear do celular; modo pairing; nome exato |
+| Problema | Solução |
+|----------|---------|
+| Faixa shop/CPU/FPS sobra | Trocar setup ST7789 ↔ ILI9341_2 |
+| Touch no lugar errado | Usar `03b_touch_calibracao` |
+| Upload falha | Segurar BOOT; cabo de dados |
+| SD falha | FAT32; cartão ≤ 32 GB |
+| JBL não conecta | Desparear do celular; modo pairing |
 
 ---
 
-## Estrutura desta pasta
+## Estrutura
 
 ```text
 firmware/etapa0/
 ├── README.md
-├── TFT_eSPI_User_Setup_CYD.h
+├── TFT_eSPI_User_Setup_CYD_ST7789.h
+├── TFT_eSPI_User_Setup_CYD_ILI9341_2.h
+├── TFT_eSPI_User_Setup_CYD.h          (legado)
 ├── 01_serial_teste/
 ├── 02_tela_teste/
+├── 02b_tela_limpeza/
 ├── 03_touch_teste/
+├── 03b_touch_calibracao/
 ├── 04_sd_teste/
 └── 05_bluetooth_jbl/
 ```
