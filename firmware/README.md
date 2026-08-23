@@ -1,18 +1,12 @@
 # Firmware — Diário Estoico (ESP32-2432S028R)
 
-Pasta do firmware da placa Yellow.
+## Etapa 0
+Validação de hardware: [`etapa0/README.md`](etapa0/README.md)
 
-## Etapa 0 (agora)
+## Etapa 1 (atual)
+Player de lição (JSON + texto + MP3 Bluetooth): [`etapa1/README.md`](etapa1/README.md)
 
-Validação de hardware: serial, tela, touch, SD e Bluetooth JBL.
-
-Guia completo:
-
-[`etapa0/README.md`](etapa0/README.md)
-
-## Próximas etapas
-
-- Etapa 1: player de lição (JSON + MP3 + scroll)
+## Próximas
 - Etapa 2: Filosofar + histórico
 - Etapa 3: ciclo 366
 - Etapa 4: menus extras
