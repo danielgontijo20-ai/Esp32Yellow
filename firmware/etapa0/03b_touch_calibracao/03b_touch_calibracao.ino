@@ -111,15 +111,40 @@ bool saveCalibrationToSd() {
     Serial.println("SD falhou ao salvar");
     return false;
   }
-  if (!SD.exists("/system")) SD.mkdir("/system");
-  if (SD.exists("/system/touch.cal")) SD.remove("/system/touch.cal");
+  if (!SD.exists("/system")) {
+    if (!SD.mkdir("/system")) {
+      Serial.println("Falha mkdir /system");
+      return false;
+    }
+  }
+
+  // Sempre sobrescreve a calibração anterior
+  if (SD.exists("/system/touch.cal")) {
+    SD.remove("/system/touch.cal");
+    Serial.println("touch.cal antigo removido");
+  }
+
   File f = SD.open("/system/touch.cal", FILE_WRITE);
-  if (!f) return false;
+  if (!f) {
+    Serial.println("Falha ao criar touch.cal");
+    return false;
+  }
   for (int i = 0; i < 4; i++) {
     f.printf("%d %d\n", corners[i].rawX, corners[i].rawY);
   }
+  f.flush();
   f.close();
-  return true;
+
+  // Confirma que gravou
+  File check = SD.open("/system/touch.cal", FILE_READ);
+  if (!check) {
+    Serial.println("touch.cal nao encontrado apos gravar");
+    return false;
+  }
+  size_t sz = check.size();
+  check.close();
+  Serial.printf("touch.cal sobrescrito OK (%u bytes)\n", (unsigned)sz);
+  return sz > 0;
 }
 
 void finishCalibration() {
