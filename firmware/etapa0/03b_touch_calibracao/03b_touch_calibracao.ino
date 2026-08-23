@@ -7,11 +7,12 @@
  * 2) Repita nos 4 cantos
  * 3) Depois teste: o ponto deve aparecer sob o dedo
  *
- * No Monitor Serial (115200) serão impressos os valores raw
- * para guardar a calibração.
+ * Se houver microSD FAT32, salva em /system/touch.cal
+ * (usado pela Etapa 1).
  */
 
 #include <SPI.h>
+#include <SD.h>
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 
@@ -21,8 +22,10 @@
 #define XPT2046_CLK  25
 #define XPT2046_CS   33
 
+#define SD_CS 5
+
 TFT_eSPI tft = TFT_eSPI();
-SPIClass touchSPI = SPIClass(VSPI);
+SPIClass sharedSPI = SPIClass(VSPI);
 XPT2046_Touchscreen touch(XPT2046_CS, XPT2046_IRQ);
 
 struct Corner {
@@ -36,18 +39,31 @@ struct Corner {
 
 Corner corners[4] = {
   {"Canto SUPERIOR ESQUERDO", 20, 20, 0, 0, false},
-  {"Canto SUPERIOR DIREITO", 0, 20, 0, 0, false},   // x preenchido no setup
-  {"Canto INFERIOR ESQUERDO", 20, 0, 0, 0, false},   // y preenchido no setup
+  {"Canto SUPERIOR DIREITO", 0, 20, 0, 0, false},
+  {"Canto INFERIOR ESQUERDO", 20, 0, 0, 0, false},
   {"Canto INFERIOR DIREITO", 0, 0, 0, 0, false},
 };
 
 int step = 0;
 bool calibrated = false;
 unsigned long lastTouchMs = 0;
+bool sdOk = false;
 
 int16_t mapFloat(int16_t v, float inMin, float inMax, float outMin, float outMax) {
   float t = (float)(v - inMin) / (inMax - inMin);
   return (int16_t)(outMin + t * (outMax - outMin));
+}
+
+bool saveCalibrationToSd() {
+  if (!sdOk) return false;
+  if (!SD.exists("/system")) SD.mkdir("/system");
+  File f = SD.open("/system/touch.cal", FILE_WRITE);
+  if (!f) return false;
+  for (int i = 0; i < 4; i++) {
+    f.printf("%d %d\n", corners[i].rawX, corners[i].rawY);
+  }
+  f.close();
+  return true;
 }
 
 void drawPrompt() {
@@ -69,12 +85,16 @@ void drawPrompt() {
 
 void finishCalibration() {
   calibrated = true;
+  bool saved = saveCalibrationToSd();
+
   tft.fillScreen(TFT_BLACK);
   tft.setTextDatum(TL_DATUM);
   tft.setTextColor(TFT_GREEN, TFT_BLACK);
   tft.drawString("Calibrado!", 10, 10, 2);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
   tft.drawString("Toque para testar", 10, 40, 2);
+  tft.setTextColor(saved ? TFT_GREEN : TFT_YELLOW, TFT_BLACK);
+  tft.drawString(saved ? "Salvo: /system/touch.cal" : "SD ausente (nao salvou)", 10, 70, 2);
 
   Serial.println("==== CALIBRACAO ====");
   for (int i = 0; i < 4; i++) {
@@ -82,6 +102,7 @@ void finishCalibration() {
                   corners[i].name, corners[i].rawX, corners[i].rawY,
                   corners[i].screenX, corners[i].screenY);
   }
+  Serial.println(saved ? "Salvo em /system/touch.cal" : "Nao salvou no SD");
   Serial.println("====================");
 }
 
@@ -89,7 +110,6 @@ bool readStableTouch(int16_t &rx, int16_t &ry) {
   if (!(touch.tirqTouched() && touch.touched())) return false;
   if (millis() - lastTouchMs < 400) return false;
 
-  // média de algumas leituras
   long sx = 0, sy = 0;
   int n = 0;
   for (int i = 0; i < 16; i++) {
@@ -110,7 +130,6 @@ bool readStableTouch(int16_t &rx, int16_t &ry) {
 }
 
 void mapCalibrated(int16_t rx, int16_t ry, int16_t &x, int16_t &y) {
-  // Usa os 4 cantos para interpolar (assume perspectiva simples por eixos)
   float xMin = (corners[0].rawX + corners[2].rawX) / 2.0f;
   float xMax = (corners[1].rawX + corners[3].rawX) / 2.0f;
   float yMin = (corners[0].rawY + corners[1].rawY) / 2.0f;
@@ -140,8 +159,11 @@ void setup() {
   corners[3].screenX = tft.width() - 20;
   corners[3].screenY = tft.height() - 20;
 
-  touchSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
-  touch.begin(touchSPI);
+  sharedSPI.begin(18, 19, 23, SD_CS);
+  sdOk = SD.begin(SD_CS, sharedSPI);
+  Serial.println(sdOk ? "SD OK" : "SD ausente");
+
+  touch.begin(sharedSPI);
   touch.setRotation(1);
 
   drawPrompt();
